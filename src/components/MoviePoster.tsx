@@ -1,7 +1,13 @@
 import { Film, ImageOff } from 'lucide-react';
-import { useEffect, useState } from 'react';
-import { usePosterUrl } from '../hooks/usePosterUrl';
+import { useLayoutEffect, useRef, useState } from 'react';
+import {
+  isPosterImageDecoded,
+  markPosterImageDecoded,
+  unmarkPosterImageDecoded,
+  usePosterUrl,
+} from '../hooks/usePosterUrl';
 import type { Movie } from '../types/movie';
+import { resolvePosterVisualState } from '../utils/posterState';
 
 interface MoviePosterProps {
   movie: Movie;
@@ -19,21 +25,42 @@ export function MoviePoster({
   const { url, isLoading } = usePosterUrl(movie);
   const [loadedUrl, setLoadedUrl] = useState<string | null>(null);
   const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  const imgRef = useRef<HTMLImageElement | null>(null);
 
-  useEffect(() => {
-    setLoadedUrl(null);
-    setFailedUrl(null);
-  }, [movie.id]);
+  // Sync cached browser <img> completion synchronously before paint so cached posters
+  // (like a back card promoted to the front after dragging) never get stuck in loading.
+  useLayoutEffect(() => {
+    if (!url) return;
+    const img = imgRef.current;
+    if (img && img.complete) {
+      if (img.naturalWidth > 0) {
+        markPosterImageDecoded(url);
+        setLoadedUrl(url);
+      } else {
+        unmarkPosterImageDecoded(url);
+        setFailedUrl(url);
+      }
+    }
+  }, [url]);
+
+  const isDecodedInCache = isPosterImageDecoded(url);
+  const posterState = resolvePosterVisualState({
+    url,
+    isFetchingUrl: isLoading,
+    loadedUrl,
+    failedUrl,
+    isDecodedInCache,
+  });
 
   const hasValidCandidate = Boolean(url && failedUrl !== url);
-  const isOfficialLoaded = hasValidCandidate && loadedUrl === url;
-  const isStillFetching = isLoading || (hasValidCandidate && !isOfficialLoaded);
-  const isUnavailable = !isStillFetching && !isOfficialLoaded;
+  const isOfficialLoaded = posterState === 'loaded';
+  const isStillFetching = posterState === 'loading';
+  const isUnavailable = posterState === 'unavailable';
 
   return (
     <div
       data-testid="movie-poster"
-      data-poster-state={isOfficialLoaded ? 'loaded' : isStillFetching ? 'loading' : 'unavailable'}
+      data-poster-state={posterState}
       className={`relative overflow-hidden bg-[#ECE0D8] dark:bg-[#141418] select-none ${className}`}
       style={{ aspectRatio: '2 / 3' }}
     >
@@ -115,14 +142,22 @@ export function MoviePoster({
       {/* Official theatrical movie poster fetched via verified allowlisted proxy */}
       {hasValidCandidate && url && (
         <img
+          key={url}
+          ref={imgRef}
           src={url}
           alt={`Pôster oficial do filme ${movie.title} (${movie.year})`}
           referrerPolicy="no-referrer"
           loading={priority ? 'eager' : 'lazy'}
-          onLoad={() => setLoadedUrl(url)}
-          onError={() => setFailedUrl(url)}
+          onLoad={() => {
+            markPosterImageDecoded(url);
+            setLoadedUrl(url);
+          }}
+          onError={() => {
+            unmarkPosterImageDecoded(url);
+            setFailedUrl(url);
+          }}
           draggable={false}
-          className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-300 ${
+          className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-200 ${
             isOfficialLoaded ? 'opacity-100' : 'opacity-0'
           }`}
         />

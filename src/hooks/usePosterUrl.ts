@@ -3,6 +3,44 @@ import type { Movie } from '../types/movie';
 
 const clientPosterCache = new Map<string, string | null>();
 const inflightRequests = new Map<string, Promise<string | null>>();
+const decodedImageUrls = new Set<string>();
+const warmingImageUrls = new Set<string>();
+
+export function isPosterImageDecoded(url: string | null): boolean {
+  return Boolean(url && decodedImageUrls.has(url));
+}
+
+export function markPosterImageDecoded(url: string): void {
+  decodedImageUrls.add(url);
+}
+
+export function unmarkPosterImageDecoded(url: string): void {
+  decodedImageUrls.delete(url);
+}
+
+function warmImageInBrowserCache(url: string): void {
+  if (
+    typeof window === 'undefined' ||
+    typeof Image === 'undefined' ||
+    decodedImageUrls.has(url) ||
+    warmingImageUrls.has(url)
+  ) {
+    return;
+  }
+  warmingImageUrls.add(url);
+  const img = new Image();
+  img.referrerPolicy = 'no-referrer';
+  img.onload = () => {
+    warmingImageUrls.delete(url);
+    if (img.naturalWidth > 0) {
+      decodedImageUrls.add(url);
+    }
+  };
+  img.onerror = () => {
+    warmingImageUrls.delete(url);
+  };
+  img.src = url;
+}
 
 const MAX_CONCURRENT_POSTERS = 6;
 let activePosterFetches = 0;
@@ -38,9 +76,17 @@ function getCacheKey(
 export function prefetchPoster(
   movie: Pick<Movie, 'originalTitle' | 'searchTitle' | 'title' | 'year' | 'director' | 'posterUrl'>,
 ): void {
-  if (movie.posterUrl) return;
+  if (movie.posterUrl) {
+    warmImageInBrowserCache(movie.posterUrl);
+    return;
+  }
   const key = getCacheKey(movie);
-  if (clientPosterCache.has(key) || inflightRequests.has(key)) return;
+  if (clientPosterCache.has(key)) {
+    const cachedUrl = clientPosterCache.get(key);
+    if (cachedUrl) warmImageInBrowserCache(cachedUrl);
+    return;
+  }
+  if (inflightRequests.has(key)) return;
 
   const params = new URLSearchParams({
     title: movie.title,
@@ -73,6 +119,9 @@ export function prefetchPoster(
     // Only cache definitive HTTP 200 responses so transient failures can retry cleanly
     if (ok) {
       clientPosterCache.set(key, url);
+      if (url) {
+        warmImageInBrowserCache(url);
+      }
     }
     inflightRequests.delete(key);
     return url;
@@ -85,27 +134,33 @@ export function usePosterUrl(
   movie: Pick<Movie, 'originalTitle' | 'searchTitle' | 'title' | 'year' | 'director' | 'posterUrl'>,
 ): { url: string | null; isLoading: boolean } {
   const key = getCacheKey(movie);
-  const initialCached = movie.posterUrl ?? clientPosterCache.get(key) ?? undefined;
+  const hasSyncResult = Boolean(movie.posterUrl) || clientPosterCache.has(key);
+  const syncUrl = movie.posterUrl ?? (clientPosterCache.has(key) ? (clientPosterCache.get(key) ?? null) : null);
 
-  const [url, setUrl] = useState<string | null>(initialCached ?? null);
-  const [isLoading, setIsLoading] = useState<boolean>(initialCached === undefined);
+  const [asyncState, setAsyncState] = useState<{
+    key: string;
+    url: string | null;
+    isLoading: boolean;
+  }>(() => ({
+    key,
+    url: syncUrl,
+    isLoading: !hasSyncResult,
+  }));
 
   useEffect(() => {
     if (movie.posterUrl) {
-      setUrl(movie.posterUrl);
-      setIsLoading(false);
+      warmImageInBrowserCache(movie.posterUrl);
       return;
     }
 
     if (clientPosterCache.has(key)) {
-      setUrl(clientPosterCache.get(key) ?? null);
-      setIsLoading(false);
+      const cachedUrl = clientPosterCache.get(key) ?? null;
+      if (cachedUrl) warmImageInBrowserCache(cachedUrl);
       return;
     }
 
     let cancelled = false;
-    setUrl(null);
-    setIsLoading(true);
+    setAsyncState({ key, url: null, isLoading: true });
 
     prefetchPoster(movie);
     const pending = inflightRequests.get(key);
@@ -113,12 +168,11 @@ export function usePosterUrl(
     if (pending) {
       pending.then((resolved) => {
         if (!cancelled) {
-          setUrl(resolved);
-          setIsLoading(false);
+          setAsyncState({ key, url: resolved, isLoading: false });
         }
       });
     } else {
-      setIsLoading(false);
+      setAsyncState({ key, url: clientPosterCache.get(key) ?? null, isLoading: false });
     }
 
     return () => {
@@ -126,5 +180,13 @@ export function usePosterUrl(
     };
   }, [key, movie.posterUrl, movie.title, movie.originalTitle, movie.searchTitle, movie.year, movie.director]);
 
-  return { url, isLoading };
+  if (hasSyncResult) {
+    return { url: syncUrl, isLoading: false };
+  }
+
+  if (asyncState.key !== key) {
+    return { url: null, isLoading: true };
+  }
+
+  return { url: asyncState.url, isLoading: asyncState.isLoading };
 }

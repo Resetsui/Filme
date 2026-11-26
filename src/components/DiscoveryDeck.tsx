@@ -509,10 +509,11 @@ export function DiscoveryDeck({
           <div className="relative w-full max-w-[332px] sm:max-w-[345px] lg:max-w-[355px]">
             {nextMovie && (
               <div
+                key={nextMovie.id}
                 aria-hidden="true"
                 className="pointer-events-none absolute inset-0 translate-y-2.5 scale-[0.95] rounded-2xl border border-[#DFCBC1] dark:border-zinc-800/80 opacity-45 overflow-hidden"
               >
-                <MoviePoster movie={nextMovie} size="hero" className="w-full rounded-2xl" />
+                <MoviePoster movie={nextMovie} size="hero" priority className="w-full rounded-2xl" />
               </div>
             )}
 
