@@ -2,7 +2,14 @@
 <html lang="pt-BR" class="dark">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#09090B" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Nocturna" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
     <title>Nocturna — Curadoria de Terror &amp; Thriller</title>
     <meta
       name="description"
@@ -27,6 +34,8 @@
         var storedApp = window.localStorage.getItem('cinema:active-universe');
         if (appParam === 'matine' || appParam === 'romcom' || (!appParam && storedApp === 'matine')) {
           document.documentElement.classList.remove('dark');
+          var themeMeta = document.querySelector('meta[name="theme-color"]');
+          if (themeMeta) themeMeta.setAttribute('content', '#F0E3DC');
         }
       } catch (e) {}
     </script>

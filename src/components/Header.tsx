@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { UNIVERSE_CONFIGS } from '../config/universes';
 import type { AppTab, AppUniverse } from '../types/movie';
+import { PWAInstallButton } from './PWAInstallButton';
 
 export interface AuthUserInfo {
   uid: string;
@@ -192,6 +193,9 @@ export function Header({
               )}
             </button>
 
+            {/* In-App PWA Install Button (hidden automatically once installed in standalone mode) */}
+            <PWAInstallButton />
+
             {/* Cloud Sync Account Control */}
             <div className="relative">
               {user ? (
@@ -299,7 +303,7 @@ export function Header({
       {/* Mobile Bottom Tab Bar — compact height (56px) respecting <=15% sticky cap */}
       <nav
         aria-label="Navegação móvel"
-        className="fixed bottom-0 left-0 right-0 z-30 grid h-14 grid-cols-3 border-t border-[#DFCBC1] bg-[#F0E3DC]/95 dark:border-zinc-800/90 dark:bg-[#09090B]/95 backdrop-blur-md md:hidden transition-colors duration-200"
+        className="fixed bottom-0 left-0 right-0 z-30 grid min-h-[3.5rem] grid-cols-3 border-t border-[#DFCBC1] bg-[#F0E3DC]/95 pb-[env(safe-area-inset-bottom)] dark:border-zinc-800/90 dark:bg-[#09090B]/95 backdrop-blur-md md:hidden transition-colors duration-200"
       >
         <button
           type="button"

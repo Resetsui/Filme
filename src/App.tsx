@@ -12,6 +12,7 @@ import { FilterBar } from './components/FilterBar';
 import { Header, type AuthUserInfo } from './components/Header';
 import { MovieDetailModal } from './components/MovieDetailModal';
 import { MovieListView } from './components/MovieListView';
+import { OfflineIndicator } from './components/OfflineIndicator';
 import { RouletteModal } from './components/RouletteModal';
 import {
   UniverseTransitionOverlay,
@@ -168,10 +169,14 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [toast]);
 
-  // Apply dual theme (<html class="dark"> for Nocturna, sunlit light editorial for Matinê) + document title + active universe persistence
+  // Apply dual theme (<html class="dark"> for Nocturna, sunlit light editorial for Matinê) + document title + PWA theme-color + active universe persistence
   useEffect(() => {
     document.documentElement.classList.toggle('dark', universe === 'nocturna');
     document.title = universeConfig.documentTitle;
+    const themeMeta = document.querySelector('meta[name="theme-color"]');
+    if (themeMeta) {
+      themeMeta.setAttribute('content', universe === 'nocturna' ? '#09090B' : '#F0E3DC');
+    }
     try {
       window.localStorage.setItem(ACTIVE_UNIVERSE_KEY, universe);
     } catch {
@@ -1326,6 +1331,9 @@ export default function App() {
 
       {/* Magical Portal Transition Overlay between Nocturna and Matinê */}
       <UniverseTransitionOverlay transition={universeTransition} />
+
+      {/* Offline indicator (invisible when online) */}
+      <OfflineIndicator />
 
       {/* Quiet Toast Feedback */}
       {toast && (

@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <defs>
+    <radialGradient id="bgGlow" cx="50%" cy="38%" r="65%">
+      <stop offset="0%" stop-color="#22121A" />
+      <stop offset="60%" stop-color="#110C10" />
+      <stop offset="100%" stop-color="#09090B" />
+    </radialGradient>
+    <linearGradient id="crimsonCrescent" x1="120" y1="110" x2="380" y2="400" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FB7185" />
+      <stop offset="55%" stop-color="#E11D48" />
+      <stop offset="100%" stop-color="#9F1239" />
+    </linearGradient>
+    <linearGradient id="filmRing" x1="90" y1="90" x2="422" y2="422" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#F43F5E" stop-opacity="0.45" />
+      <stop offset="100%" stop-color="#FDA4AF" stop-opacity="0.12" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bgGlow)" />
+  <circle cx="256" cy="256" r="184" stroke="url(#filmRing)" stroke-width="6" />
+  <path
+    d="M312 138C241 142 184 201 184 273C184 345 241 404 312 408C287 420 258 424 228 418C156 403 108 333 123 261C135 203 181 157 239 145C264 140 289 138 312 138Z"
+    fill="url(#crimsonCrescent)"
+  />
+  <path
+    d="M342 186L351 214L379 223L351 232L342 260L333 232L305 223L333 214L342 186Z"
+    fill="#FFE4E6"
+  />
+  <circle cx="372" cy="306" r="11" fill="#FB7185" fill-opacity="0.85" />
+</svg>
