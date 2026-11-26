@@ -132,6 +132,7 @@ export default function App() {
 
   const batchCounterRef = useRef<Record<AppUniverse, number>>({ nocturna: 0, matine: 0 });
   const autoRefillInFlightRef = useRef(false);
+  const autoRefillCooldownUntilRef = useRef(0);
   const latestRadarInFlightRef = useRef(false);
   const recentAutoTriggeredRef = useRef(false);
   const transitionTimersRef = useRef<number[]>([]);
@@ -720,6 +721,7 @@ export default function App() {
       discoverList.length > 3 ||
       library.history.length === 0 ||
       autoRefillInFlightRef.current ||
+      Date.now() < autoRefillCooldownUntilRef.current ||
       isAiLoading ||
       isFindingSimilar
     ) {
@@ -739,8 +741,18 @@ export default function App() {
       prependToTop: false,
       silent: false,
     })
-      .catch(() => {
-        // Keep silent on background auto-refill errors; user can always trigger manually
+      .then((incoming) => {
+        if (incoming.length === 0) {
+          autoRefillCooldownUntilRef.current = Date.now() + 60_000;
+        }
+      })
+      .catch((error) => {
+        autoRefillCooldownUntilRef.current = Date.now() + 60_000;
+        const msg =
+          error instanceof Error && error.message
+            ? error.message
+            : 'Pico de demanda na Curadoria IA agora. Tente novamente em instantes.';
+        showToast(msg, 'error');
       })
       .finally(() => {
         autoRefillInFlightRef.current = false;
@@ -755,18 +767,20 @@ export default function App() {
     isAiLoading,
     isFindingSimilar,
     fetchAiRecommendations,
+    showToast,
   ]);
 
-  // Native background AI taste calibration: every 5 fresh liked/disliked/watchlist signals in the active universe
+  // Native background AI taste calibration: every 10 fresh liked/disliked/watchlist signals in the active universe
   useEffect(() => {
     const signalDelta = tasteProfile.signalCount - lastCalibratedSignalRef.current[universe];
     if (
       !autoRefillEnabled ||
       activeTab !== 'discover' ||
       filters.search.trim().length > 0 ||
-      tasteProfile.signalCount < 4 ||
-      signalDelta < 5 ||
+      tasteProfile.signalCount < 8 ||
+      signalDelta < 10 ||
       autoRefillInFlightRef.current ||
+      Date.now() < autoRefillCooldownUntilRef.current ||
       isAiLoading ||
       isFindingSimilar
     ) {
@@ -789,7 +803,7 @@ export default function App() {
       toastMessage: (count) => `Curadoria calibrada com +${count} filmes para o seu gosto.`,
     })
       .catch(() => {
-        // Non-blocking background calibration
+        autoRefillCooldownUntilRef.current = Date.now() + 60_000;
       })
       .finally(() => {
         autoRefillInFlightRef.current = false;
@@ -985,6 +999,7 @@ export default function App() {
 
   const handleManualLoadMore = async () => {
     if (isAutoRefilling) return;
+    autoRefillCooldownUntilRef.current = 0;
     const targetUniverse = universeRef.current;
     setIsAutoRefilling(true);
     try {

@@ -57,17 +57,69 @@ interface DiscoveryDeckProps {
   onInspectMovie: (movie: Movie) => void;
 }
 
+type ExitDirection = 'left' | 'right' | 'up' | 'down' | null;
+
 interface SwipeablePosterCardProps {
   movie: Movie;
+  isTop: boolean;
   isChristmasFilm: boolean;
-  exitDirection: 'left' | 'right' | 'up' | 'down' | null;
   onSwipeDecision: (decision: MovieDecision, sentiment?: SeenSentiment) => void;
 }
 
+const cardVariants = {
+  initialBack: {
+    scale: 0.91,
+    y: 18,
+    opacity: 0,
+    x: 0,
+    zIndex: 5,
+  },
+  initialFront: {
+    scale: 0.96,
+    y: 10,
+    opacity: 0,
+    x: 0,
+    zIndex: 20,
+  },
+  back: {
+    scale: 0.95,
+    y: 10,
+    opacity: 0.55,
+    x: 0,
+    zIndex: 10,
+    transition: { duration: 0.24, ease: [0.22, 1, 0.36, 1] as const },
+  },
+  front: {
+    scale: 1,
+    y: 0,
+    opacity: 1,
+    x: 0,
+    zIndex: 20,
+    transition: { duration: 0.24, ease: [0.22, 1, 0.36, 1] as const },
+  },
+  exitFront: (dir: ExitDirection) => ({
+    x: dir === 'right' ? 420 : dir === 'left' ? -420 : 0,
+    y: dir === 'up' ? -340 : dir === 'down' ? 340 : 0,
+    opacity: 0,
+    scale: 0.96,
+    zIndex: 30,
+    pointerEvents: 'none' as const,
+    transition: { duration: 0.24, ease: [0.22, 1, 0.36, 1] as const },
+  }),
+  exitBack: {
+    scale: 0.9,
+    y: 18,
+    opacity: 0,
+    zIndex: 1,
+    pointerEvents: 'none' as const,
+    transition: { duration: 0.16, ease: 'easeOut' as const },
+  },
+};
+
 function SwipeablePosterCard({
   movie,
+  isTop,
   isChristmasFilm,
-  exitDirection,
   onSwipeDecision,
 }: SwipeablePosterCardProps) {
   const [isMobileDetailsOpen, setIsMobileDetailsOpen] = useState(false);
@@ -76,7 +128,7 @@ function SwipeablePosterCard({
 
   const dragX = useMotionValue(0);
   const dragY = useMotionValue(0);
-  const rotate = useTransform(dragX, [-220, 0, 220], [-8, 0, 8]);
+  const rotate = useTransform(dragX, [-260, 0, 260], [-10, 0, 10]);
 
   // Dominant-axis directional stamp opacities so diagonal drags never flash conflicting badges
   const rightStampOpacity = useTransform([dragX, dragY], ([x, y]: number[]) => {
@@ -97,6 +149,12 @@ function SwipeablePosterCard({
   });
 
   useEffect(() => {
+    if (!isTop && isMobileDetailsOpen) {
+      setIsMobileDetailsOpen(false);
+    }
+  }, [isTop, isMobileDetailsOpen]);
+
+  useEffect(() => {
     return () => {
       if (dragReleaseTimerRef.current !== null) {
         window.clearTimeout(dragReleaseTimerRef.current);
@@ -105,6 +163,7 @@ function SwipeablePosterCard({
   }, []);
 
   const handleDragStart = () => {
+    if (!isTop) return;
     if (dragReleaseTimerRef.current !== null) {
       window.clearTimeout(dragReleaseTimerRef.current);
       dragReleaseTimerRef.current = null;
@@ -113,6 +172,7 @@ function SwipeablePosterCard({
   };
 
   const handleDragEnd = (_: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
+    if (!isTop) return;
     dragReleaseTimerRef.current = window.setTimeout(() => {
       isDraggingRef.current = false;
       dragReleaseTimerRef.current = null;
@@ -137,41 +197,38 @@ function SwipeablePosterCard({
   };
 
   const handlePosterClick = () => {
-    if (isDraggingRef.current) return;
+    if (!isTop || isDraggingRef.current) return;
     if (typeof window !== 'undefined' && window.innerWidth >= 1024) return;
     setIsMobileDetailsOpen((prev) => !prev);
   };
 
   return (
     <motion.div
-      data-testid="active-poster-card"
+      data-testid={isTop ? 'active-poster-card' : 'back-poster-card'}
+      aria-hidden={!isTop}
+      variants={cardVariants}
+      initial={isTop ? 'initialFront' : 'initialBack'}
+      animate={isTop ? 'front' : 'back'}
+      exit={isTop ? 'exitFront' : 'exitBack'}
       style={{ x: dragX, y: dragY, rotate }}
-      drag={!isMobileDetailsOpen}
+      drag={isTop && !isMobileDetailsOpen}
       dragConstraints={{ left: 0, right: 0, top: 0, bottom: 0 }}
       dragElastic={0.85}
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
       onClick={handlePosterClick}
-      initial={{ opacity: 0, scale: 0.96, y: 10 }}
-      animate={{ opacity: 1, scale: 1, y: 0 }}
-      exit={{
-        x: exitDirection === 'right' ? 340 : exitDirection === 'left' ? -340 : 0,
-        y: exitDirection === 'up' ? -260 : exitDirection === 'down' ? 260 : 0,
-        opacity: 0,
-        rotate: exitDirection === 'right' ? 10 : exitDirection === 'left' ? -10 : 0,
-        transition: { duration: 0.22, ease: [0.16, 1, 0.3, 1] },
-      }}
-      transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-      className={`relative rounded-2xl border border-[#DFCBC1] shadow-xl shadow-[#4A2E38]/12 dark:border-zinc-800 dark:shadow-2xl dark:shadow-black/70 overflow-hidden ${
-        isMobileDetailsOpen
-          ? 'cursor-pointer touch-auto'
-          : 'cursor-grab active:cursor-grabbing touch-none'
+      className={`absolute inset-0 rounded-2xl border border-[#DFCBC1] shadow-xl shadow-[#4A2E38]/12 dark:border-zinc-800 dark:shadow-2xl dark:shadow-black/70 overflow-hidden will-change-transform ${
+        !isTop
+          ? 'pointer-events-none'
+          : isMobileDetailsOpen
+            ? 'cursor-pointer touch-auto'
+            : 'cursor-grab active:cursor-grabbing touch-none'
       }`}
     >
       <MoviePoster movie={movie} size="hero" priority className="w-full rounded-2xl" />
 
       {/* Mobile-only clean integrated poster overlay: IMDb rating + Title + tap for details */}
-      {!isMobileDetailsOpen && (
+      {isTop && !isMobileDetailsOpen && (
         <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/95 via-black/75 to-transparent px-4 pb-4 pt-20 lg:hidden">
           <div className="flex items-center justify-between gap-2 text-xs text-zinc-200">
             <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
@@ -211,7 +268,7 @@ function SwipeablePosterCard({
       )}
 
       {/* Mobile-only tap-to-toggle inline details & synopsis overlay (tap again to return to poster) */}
-      {isMobileDetailsOpen && (
+      {isTop && isMobileDetailsOpen && (
         <div
           data-testid="mobile-poster-details"
           className="absolute inset-0 z-20 flex flex-col justify-between bg-[#120D11]/94 p-4 text-zinc-100 backdrop-blur-md lg:hidden animate-[fadeIn_160ms_ease-out]"
@@ -284,37 +341,41 @@ function SwipeablePosterCard({
       )}
 
       {/* 4-Way Directional Swipe Stamps */}
-      <motion.div
-        style={{ opacity: rightStampOpacity }}
-        aria-hidden="true"
-        className="pointer-events-none absolute left-5 top-5 z-10 rounded-md border-2 border-rose-500 bg-black/80 px-3 py-1 text-sm font-semibold tracking-wide text-rose-400"
-      >
-        Quero ver
-      </motion.div>
+      {isTop && (
+        <>
+          <motion.div
+            style={{ opacity: rightStampOpacity }}
+            aria-hidden="true"
+            className="pointer-events-none absolute left-5 top-5 z-10 rounded-md border-2 border-rose-500 bg-black/80 px-3 py-1 text-sm font-semibold tracking-wide text-rose-400"
+          >
+            Quero ver
+          </motion.div>
 
-      <motion.div
-        style={{ opacity: leftStampOpacity }}
-        aria-hidden="true"
-        className="pointer-events-none absolute right-5 top-5 z-10 rounded-md border-2 border-emerald-400 bg-black/80 px-3 py-1 text-sm font-semibold tracking-wide text-emerald-300"
-      >
-        Já vi · Curti
-      </motion.div>
+          <motion.div
+            style={{ opacity: leftStampOpacity }}
+            aria-hidden="true"
+            className="pointer-events-none absolute right-5 top-5 z-10 rounded-md border-2 border-emerald-400 bg-black/80 px-3 py-1 text-sm font-semibold tracking-wide text-emerald-300"
+          >
+            Já vi · Curti
+          </motion.div>
 
-      <motion.div
-        style={{ opacity: upStampOpacity }}
-        aria-hidden="true"
-        className="pointer-events-none absolute bottom-28 lg:bottom-16 left-1/2 z-10 -translate-x-1/2 rounded-md border-2 border-amber-400 bg-black/80 px-3.5 py-1 text-sm font-semibold tracking-wide text-amber-300 whitespace-nowrap"
-      >
-        Não curti
-      </motion.div>
+          <motion.div
+            style={{ opacity: upStampOpacity }}
+            aria-hidden="true"
+            className="pointer-events-none absolute bottom-28 lg:bottom-16 left-1/2 z-10 -translate-x-1/2 rounded-md border-2 border-amber-400 bg-black/80 px-3.5 py-1 text-sm font-semibold tracking-wide text-amber-300 whitespace-nowrap"
+          >
+            Não curti
+          </motion.div>
 
-      <motion.div
-        style={{ opacity: downStampOpacity }}
-        aria-hidden="true"
-        className="pointer-events-none absolute top-6 left-1/2 z-10 -translate-x-1/2 rounded-md border-2 border-zinc-300 bg-black/80 px-3.5 py-1 text-sm font-semibold tracking-wide text-zinc-100 whitespace-nowrap"
-      >
-        Pular
-      </motion.div>
+          <motion.div
+            style={{ opacity: downStampOpacity }}
+            aria-hidden="true"
+            className="pointer-events-none absolute top-6 left-1/2 z-10 -translate-x-1/2 rounded-md border-2 border-zinc-300 bg-black/80 px-3.5 py-1 text-sm font-semibold tracking-wide text-zinc-100 whitespace-nowrap"
+          >
+            Pular
+          </motion.div>
+        </>
+      )}
     </motion.div>
   );
 }
@@ -346,16 +407,13 @@ export function DiscoveryDeck({
   const currentMovie = movies[0] ?? null;
   const nextMovie = movies[1] ?? null;
   const upcoming = movies.slice(1, 5);
+  const visibleStack = nextMovie && currentMovie ? [nextMovie, currentMovie] : currentMovie ? [currentMovie] : [];
 
-  const [exitDirection, setExitDirection] = useState<'left' | 'right' | 'up' | 'down' | null>(null);
+  const [exitDirection, setExitDirection] = useState<ExitDirection>(null);
 
   useEffect(() => {
     movies.slice(0, 5).forEach((movie) => prefetchPoster(movie));
   }, [movies]);
-
-  useEffect(() => {
-    setExitDirection(null);
-  }, [currentMovie?.id]);
 
   const triggerDecision = (decision: MovieDecision, sentiment?: SeenSentiment) => {
     if (!currentMovie) return;
@@ -506,25 +564,23 @@ export function DiscoveryDeck({
       <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-12 lg:gap-10">
         {/* Left Column: Interactive Swipeable Poster Deck */}
         <div className="lg:col-span-5 flex flex-col items-center">
-          <div className="relative w-full max-w-[332px] sm:max-w-[345px] lg:max-w-[355px]">
-            {nextMovie && (
-              <div
-                key={nextMovie.id}
-                aria-hidden="true"
-                className="pointer-events-none absolute inset-0 translate-y-2.5 scale-[0.95] rounded-2xl border border-[#DFCBC1] dark:border-zinc-800/80 opacity-45 overflow-hidden"
-              >
-                <MoviePoster movie={nextMovie} size="hero" priority className="w-full rounded-2xl" />
-              </div>
-            )}
-
-            <AnimatePresence mode="wait" initial={false}>
-              <SwipeablePosterCard
-                key={currentMovie.id}
-                movie={currentMovie}
-                isChristmasFilm={isChristmasFilm}
-                exitDirection={exitDirection}
-                onSwipeDecision={triggerDecision}
-              />
+          <div
+            className="relative w-full max-w-[332px] sm:max-w-[345px] lg:max-w-[355px]"
+            style={{ aspectRatio: '2 / 3' }}
+          >
+            <AnimatePresence custom={exitDirection} initial={false}>
+              {visibleStack.map((movie, idx) => {
+                const isTop = idx === visibleStack.length - 1;
+                return (
+                  <SwipeablePosterCard
+                    key={movie.id}
+                    movie={movie}
+                    isTop={isTop}
+                    isChristmasFilm={movie.subgenre === 'Natal & Fim de Ano'}
+                    onSwipeDecision={triggerDecision}
+                  />
+                );
+              })}
             </AnimatePresence>
           </div>
 

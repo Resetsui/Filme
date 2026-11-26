@@ -2,7 +2,8 @@ import 'dotenv/config';
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { GoogleGenAI, Type } from '@google/genai';
+import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
+import { runWithModelFallback } from './src/utils/aiRetry.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -682,7 +683,20 @@ function sanitizeMovieItems(
 
 function formatGeminiError(error: unknown, fallback: string): { status: number; message: string } {
   const raw = error instanceof Error ? error.message : String(error ?? '');
-  if (raw.includes('429') || raw.includes('RESOURCE_EXHAUSTED') || raw.includes('quota')) {
+  const lower = raw.toLowerCase();
+  if (
+    lower.includes('503') ||
+    lower.includes('unavailable') ||
+    lower.includes('overloaded') ||
+    lower.includes('high demand') ||
+    lower.includes('timeout')
+  ) {
+    return {
+      status: 503,
+      message: 'A IA está com pico de demanda agora (503). Aguarde alguns segundos e tente novamente.',
+    };
+  }
+  if (raw.includes('429') || raw.includes('RESOURCE_EXHAUSTED') || lower.includes('quota')) {
     return {
       status: 429,
       message: 'A cota temporária da Curadoria IA foi atingida agora. Tente novamente em instantes.',
@@ -1212,18 +1226,33 @@ async function startServer() {
         .join('\n');
 
       const ai = getGeminiClient();
-      const response = useLiveSearch
-        ? await ai.models.generateContent({
-            model: 'gemini-4-hydrogen',
+      const discoverModels = useLiveSearch
+        ? ['gemini-4-hydrogen', 'gemini-3.1-flash-lite']
+        : ['gemini-3.1-flash-lite', 'gemini-4-hydrogen'];
+
+      const { result: response } = await runWithModelFallback(
+        async (model) => {
+          const thinkingConfig =
+            model === 'gemini-4-hydrogen'
+              ? { thinkingLevel: ThinkingLevel.LOW }
+              : undefined;
+
+          if (useLiveSearch) {
+            return ai.models.generateContent({
+              model,
+              contents: prompt,
+              config: {
+                ...(thinkingConfig ? { thinkingConfig } : {}),
+                tools: [{ googleSearch: {} }],
+              },
+            });
+          }
+
+          return ai.models.generateContent({
+            model,
             contents: prompt,
             config: {
-              tools: [{ googleSearch: {} }],
-            },
-          })
-        : await ai.models.generateContent({
-            model: 'gemini-4-hydrogen',
-            contents: prompt,
-            config: {
+              ...(thinkingConfig ? { thinkingConfig } : {}),
               responseMimeType: 'application/json',
               responseSchema: {
                 type: Type.ARRAY,
@@ -1263,6 +1292,9 @@ async function startServer() {
               },
             },
           });
+        },
+        { models: discoverModels, timeoutMs: 22_000, baseDelayMs: 800 },
+      );
 
       const parsed = extractJsonArrayFromText(response.text ?? '[]');
       if (!parsed) {
@@ -1341,13 +1373,20 @@ async function startServer() {
           `title (título em PT-BR), originalTitle (título original), searchTitle (título em inglês para busca de pôster), year (inteiro), director, country, runtimeMinutes (inteiro), imdbRating (número real aproximado 1 casa decimal), subgenre (um de: ${subgenreEnumText}), secondaryTag, obscurity (um de: "Blockbuster", "Clássico", "Cult", "Lado B", "Raridade"), hasPtBrDub (booleano: true se já possui dublagem PT-BR nos cinemas/streamings), synopsis (2 a 3 frases em PT-BR sem spoilers), editorialNote (1 frase curta indicando por que vale assistir este lançamento recente).`,
         ].join('\n');
 
-        const response = await ai.models.generateContent({
-          model: 'gemini-4-hydrogen',
-          contents: radarPrompt,
-          config: {
-            tools: [{ googleSearch: {} }],
-          },
-        });
+        const { result: response } = await runWithModelFallback(
+          (model) =>
+            ai.models.generateContent({
+              model,
+              contents: radarPrompt,
+              config: {
+                ...(model === 'gemini-4-hydrogen'
+                  ? { thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } }
+                  : {}),
+                tools: [{ googleSearch: {} }],
+              },
+            }),
+          { models: ['gemini-4-hydrogen', 'gemini-3.1-flash-lite'], timeoutMs: 20_000, baseDelayMs: 700 },
+        );
 
         const parsed = extractJsonArrayFromText(response.text ?? '[]');
         const movies = parsed
@@ -1440,9 +1479,20 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`Nocturna server running on http://0.0.0.0:${PORT}`);
   });
+
+  const shutdown = (signal: string) => {
+    console.log(`Received ${signal}, shutting down Nocturna server gracefully...`);
+    server.close(() => {
+      process.exit(0);
+    });
+    setTimeout(() => process.exit(0), 5000).unref();
+  };
+
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
 }
 
 startServer();
