@@ -84,7 +84,7 @@ export function Header({
 
   return (
     <>
-      <header className="sticky top-0 z-30 border-b border-[#DFCBC1] bg-[#F0E3DC]/92 dark:border-zinc-800/80 dark:bg-[#09090B]/92 backdrop-blur-md transition-colors duration-200">
+      <header className="sticky top-0 z-30 border-b border-[#DFCBC1] bg-[#F0E3DC]/92 pt-[env(safe-area-inset-top)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] dark:border-zinc-800/80 dark:bg-[#09090B]/92 backdrop-blur-md transition-colors duration-200">
         <div className="mx-auto flex h-14 md:h-16 max-w-7xl items-center justify-between gap-4 md:gap-8 px-4 sm:px-6 lg:px-8">
           {/* Zone 1: Top-Left Direct Universe Icon Toggle (Heart <-> Moon) + Brand Wordmark */}
           <div className="flex items-center gap-2.5 shrink-0">
@@ -102,7 +102,7 @@ export function Header({
                   ? 'Abrir Matinê · Comédia Romântica'
                   : 'Voltar ao Nocturna · Terror & Thriller'
               }
-              className={`group inline-flex h-9 w-9 md:h-10 md:w-10 items-center justify-center rounded-xl border transition-all duration-200 active:scale-95 shrink-0 focus-visible:outline-none focus-visible:ring-2 ${
+              className={`group inline-flex h-10 w-10 items-center justify-center rounded-xl border transition-all duration-200 active:scale-95 shrink-0 focus-visible:outline-none focus-visible:ring-2 ${
                 universe === 'nocturna'
                   ? 'border-zinc-800 bg-[#141418] text-rose-400 hover:border-rose-500/60 hover:bg-rose-950/40 hover:text-rose-300 focus-visible:ring-rose-500'
                   : 'border-[#DFC6CE] bg-[#FAF3EE] text-[#5B4354] hover:border-[#2D1E25]/40 hover:bg-[#2D1E25] hover:text-[#FAF3EE] focus-visible:ring-[#BE3A5E]'
