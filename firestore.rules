@@ -1,0 +1,441 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global Safety Net (Default Deny)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Reusable Hardened Primitives
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isVerifiedUser() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidChunkId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 64 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function parentUserExists(userId) {
+      return exists(/databases/$(database)/documents/users/$(userId));
+    }
+
+    function isValidSubgenre(val) {
+      return val in [
+        'Psicológico',
+        'Sobrenatural',
+        'Folk & Culto',
+        'Thriller Noir',
+        'Cósmico & Sci-Fi',
+        'Found Footage',
+        'Slasher & Sobrevivência',
+        'Internacional'
+      ];
+    }
+
+    function isValidRomcomSubgenre(val) {
+      return val in [
+        'Natal & Fim de Ano',
+        'Clássico Romântico',
+        'Inimigos a Amantes',
+        'Falso Namoro',
+        'Amigos a Amantes',
+        'Segunda Chance',
+        'Viagem & Destino',
+        'Drama Romântico',
+        'Internacional Rom-Com'
+      ];
+    }
+
+    function isValidObscurity(val) {
+      return val in ['Blockbuster', 'Clássico', 'Cult', 'Lado B', 'Raridade'];
+    }
+
+    // Validation Blueprint: UserProfile
+    function isValidUserProfile(data, userId) {
+      return data.keys().hasAll(['uid', 'displayName', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'displayName', 'createdAt', 'updatedAt'])
+        && data.uid is string
+        && data.uid.size() <= 128
+        && data.uid == userId
+        && data.uid == request.auth.uid
+        && data.displayName is string
+        && data.displayName.size() <= 120
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    // Validation Blueprint: MovieEntry
+    function isValidMovieEntry(data, userId, movieId) {
+      return data.keys().hasAll(['ownerId', 'movieId', 'status', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly([
+          'ownerId',
+          'movieId',
+          'status',
+          'sentiment',
+          'personalRating',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.ownerId is string
+        && data.ownerId.size() <= 128
+        && data.ownerId == userId
+        && data.ownerId == request.auth.uid
+        && data.movieId is string
+        && data.movieId.size() <= 128
+        && data.movieId == movieId
+        && data.status in ['seen', 'watchlist', 'skipped']
+        && (!('sentiment' in data) || (data.sentiment is string && data.sentiment.size() <= 16 && data.sentiment in ['liked', 'disliked']))
+        && (!('personalRating' in data) || (data.personalRating is int && data.personalRating >= 1 && data.personalRating <= 5))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    // Shared DiscoveredMovie Core Fields Validator
+    function isValidDiscoveredMovieCore(data, userId, movieId) {
+      return data.keys().hasAll([
+          'ownerId',
+          'id',
+          'title',
+          'originalTitle',
+          'year',
+          'imdbRating',
+          'runtimeMinutes',
+          'director',
+          'country',
+          'subgenre',
+          'obscurity',
+          'hasPtBrDub',
+          'synopsis',
+          'isAiDiscovered',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'ownerId',
+          'id',
+          'title',
+          'originalTitle',
+          'searchTitle',
+          'year',
+          'imdbRating',
+          'runtimeMinutes',
+          'director',
+          'country',
+          'subgenre',
+          'secondaryTag',
+          'obscurity',
+          'hasPtBrDub',
+          'synopsis',
+          'editorialNote',
+          'isAiDiscovered',
+          'createdAt',
+          'updatedAt'
+        ])
+        && data.ownerId is string
+        && data.ownerId.size() <= 128
+        && data.ownerId == userId
+        && data.ownerId == request.auth.uid
+        && data.id is string
+        && data.id.size() <= 128
+        && data.id == movieId
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 180
+        && data.originalTitle is string && data.originalTitle.size() >= 1 && data.originalTitle.size() <= 180
+        && (!('searchTitle' in data) || (data.searchTitle is string && data.searchTitle.size() <= 180))
+        && data.year is int && data.year >= 1900 && data.year <= 2035
+        && data.imdbRating is number && data.imdbRating >= 0 && data.imdbRating <= 10
+        && data.runtimeMinutes is int && data.runtimeMinutes >= 20 && data.runtimeMinutes <= 400
+        && data.director is string && data.director.size() >= 1 && data.director.size() <= 120
+        && data.country is string && data.country.size() >= 1 && data.country.size() <= 80
+        && data.subgenre is string && data.subgenre.size() <= 40
+        && (!('secondaryTag' in data) || (data.secondaryTag is string && data.secondaryTag.size() <= 80))
+        && data.obscurity is string && data.obscurity.size() <= 30 && isValidObscurity(data.obscurity)
+        && data.hasPtBrDub is bool
+        && data.synopsis is string && data.synopsis.size() >= 1 && data.synopsis.size() <= 600
+        && (!('editorialNote' in data) || (data.editorialNote is string && data.editorialNote.size() <= 400))
+        && data.isAiDiscovered is bool
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    // Validation Blueprint: DiscoveredMovie (Nocturna)
+    function isValidDiscoveredMovie(data, userId, movieId) {
+      return isValidDiscoveredMovieCore(data, userId, movieId)
+        && isValidSubgenre(data.subgenre);
+    }
+
+    // Validation Blueprint: RomcomDiscoveredMovie (Matinê)
+    function isValidRomcomDiscoveredMovie(data, userId, movieId) {
+      return isValidDiscoveredMovieCore(data, userId, movieId)
+        && isValidRomcomSubgenre(data.subgenre);
+    }
+
+    // Validation Blueprint: ExternalSeenChunk
+    function isValidExternalSeenChunk(data, userId, chunkId) {
+      return data.keys().hasAll(['ownerId', 'chunkId', 'titles', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['ownerId', 'chunkId', 'titles', 'createdAt', 'updatedAt'])
+        && data.ownerId is string
+        && data.ownerId.size() <= 128
+        && data.ownerId == userId
+        && data.ownerId == request.auth.uid
+        && data.chunkId is string
+        && data.chunkId.size() <= 64
+        && data.chunkId == chunkId
+        && data.titles is list
+        && data.titles.size() >= 1
+        && data.titles.size() <= 100
+        && data.titles[0] is string
+        && data.titles[0].size() >= 1
+        && data.titles[0].size() <= 160
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    // Collection: /users/{userId}
+    match /users/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow list: if false;
+
+      allow create: if isOwner(userId)
+        && isValidId(userId)
+        && isValidUserProfile(incoming(), userId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if isOwner(userId)
+        && isValidId(userId)
+        && isValidUserProfile(incoming(), userId)
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          // Action: Update Display Name
+          incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'updatedAt'])
+        );
+
+      allow delete: if isOwner(userId) && isValidId(userId);
+
+      // Subcollection: /users/{userId}/entries/{movieId} (Nocturna)
+      match /entries/{movieId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(movieId);
+        allow list: if isOwner(userId) && resource.data.ownerId == request.auth.uid;
+
+        allow create: if isOwner(userId)
+          && isValidId(userId)
+          && isValidId(movieId)
+          && isValidMovieEntry(incoming(), userId, movieId)
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && parentUserExists(userId);
+
+        allow update: if isOwner(userId)
+          && isValidId(userId)
+          && isValidId(movieId)
+          && isValidMovieEntry(incoming(), userId, movieId)
+          && incoming().ownerId == existing().ownerId
+          && incoming().movieId == existing().movieId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'status',
+              'sentiment',
+              'personalRating',
+              'updatedAt'
+            ])
+          )
+          && parentUserExists(userId);
+
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(movieId);
+      }
+
+      // Subcollection: /users/{userId}/discoveredMovies/{movieId} (Nocturna)
+      match /discoveredMovies/{movieId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(movieId);
+        allow list: if isOwner(userId) && resource.data.ownerId == request.auth.uid;
+
+        allow create: if isOwner(userId)
+          && isValidId(userId)
+          && isValidId(movieId)
+          && isValidDiscoveredMovie(incoming(), userId, movieId)
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && parentUserExists(userId);
+
+        allow update: if isOwner(userId)
+          && isValidId(userId)
+          && isValidId(movieId)
+          && isValidDiscoveredMovie(incoming(), userId, movieId)
+          && incoming().ownerId == existing().ownerId
+          && incoming().id == existing().id
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'title',
+              'originalTitle',
+              'searchTitle',
+              'imdbRating',
+              'hasPtBrDub',
+              'synopsis',
+              'editorialNote',
+              'updatedAt'
+            ])
+          )
+          && parentUserExists(userId);
+
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(movieId);
+      }
+
+      // Subcollection: /users/{userId}/externalSeen/{chunkId} (Nocturna)
+      match /externalSeen/{chunkId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidChunkId(chunkId);
+        allow list: if isOwner(userId) && resource.data.ownerId == request.auth.uid;
+
+        allow create: if isOwner(userId)
+          && isValidId(userId)
+          && isValidChunkId(chunkId)
+          && isValidExternalSeenChunk(incoming(), userId, chunkId)
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && parentUserExists(userId);
+
+        allow update: if isOwner(userId)
+          && isValidId(userId)
+          && isValidChunkId(chunkId)
+          && isValidExternalSeenChunk(incoming(), userId, chunkId)
+          && incoming().ownerId == existing().ownerId
+          && incoming().chunkId == existing().chunkId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['titles', 'updatedAt'])
+          )
+          && parentUserExists(userId);
+
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidChunkId(chunkId);
+      }
+
+      // Subcollection: /users/{userId}/romcomEntries/{movieId} (Matinê)
+      match /romcomEntries/{movieId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(movieId);
+        allow list: if isOwner(userId) && resource.data.ownerId == request.auth.uid;
+
+        allow create: if isOwner(userId)
+          && isValidId(userId)
+          && isValidId(movieId)
+          && isValidMovieEntry(incoming(), userId, movieId)
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && parentUserExists(userId);
+
+        allow update: if isOwner(userId)
+          && isValidId(userId)
+          && isValidId(movieId)
+          && isValidMovieEntry(incoming(), userId, movieId)
+          && incoming().ownerId == existing().ownerId
+          && incoming().movieId == existing().movieId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'status',
+              'sentiment',
+              'personalRating',
+              'updatedAt'
+            ])
+          )
+          && parentUserExists(userId);
+
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(movieId);
+      }
+
+      // Subcollection: /users/{userId}/romcomDiscoveredMovies/{movieId} (Matinê)
+      match /romcomDiscoveredMovies/{movieId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidId(movieId);
+        allow list: if isOwner(userId) && resource.data.ownerId == request.auth.uid;
+
+        allow create: if isOwner(userId)
+          && isValidId(userId)
+          && isValidId(movieId)
+          && isValidRomcomDiscoveredMovie(incoming(), userId, movieId)
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && parentUserExists(userId);
+
+        allow update: if isOwner(userId)
+          && isValidId(userId)
+          && isValidId(movieId)
+          && isValidRomcomDiscoveredMovie(incoming(), userId, movieId)
+          && incoming().ownerId == existing().ownerId
+          && incoming().id == existing().id
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'title',
+              'originalTitle',
+              'searchTitle',
+              'imdbRating',
+              'hasPtBrDub',
+              'synopsis',
+              'editorialNote',
+              'updatedAt'
+            ])
+          )
+          && parentUserExists(userId);
+
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidId(movieId);
+      }
+
+      // Subcollection: /users/{userId}/romcomExternalSeen/{chunkId} (Matinê)
+      match /romcomExternalSeen/{chunkId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidChunkId(chunkId);
+        allow list: if isOwner(userId) && resource.data.ownerId == request.auth.uid;
+
+        allow create: if isOwner(userId)
+          && isValidId(userId)
+          && isValidChunkId(chunkId)
+          && isValidExternalSeenChunk(incoming(), userId, chunkId)
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && parentUserExists(userId);
+
+        allow update: if isOwner(userId)
+          && isValidId(userId)
+          && isValidChunkId(chunkId)
+          && isValidExternalSeenChunk(incoming(), userId, chunkId)
+          && incoming().ownerId == existing().ownerId
+          && incoming().chunkId == existing().chunkId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['titles', 'updatedAt'])
+          )
+          && parentUserExists(userId);
+
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidChunkId(chunkId);
+      }
+    }
+  }
+}

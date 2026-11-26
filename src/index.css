@@ -1,0 +1,185 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  :root {
+    --font-display: 'Fraunces', Georgia, serif;
+    --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+    color-scheme: light;
+  }
+
+  html {
+    font-family: var(--font-sans);
+    background-color: #F4EAE4;
+    color: #2D1E25;
+  }
+
+  html.dark {
+    background-color: #09090B;
+    color: #F4F4F5;
+    color-scheme: dark;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    background-color: #F4EAE4;
+    color: #2D1E25;
+    overflow-x: hidden;
+  }
+
+  html.dark body {
+    background-color: #09090B;
+    color: #F4F4F5;
+  }
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
+
+.font-mono-num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.text-balance {
+  text-wrap: balance;
+}
+
+/* Custom subtle scrollbars for filter strips */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* GPU-composited magical universe portal transition animations (zero clip-path stalls) */
+@keyframes universePortalWave {
+  0% {
+    transform: translate(-50%, -50%) scale(0.008);
+    opacity: 0.96;
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes universePortalRing {
+  0% {
+    transform: translate(-50%, -50%) scale(0.02);
+    opacity: 0.95;
+  }
+  60% {
+    opacity: 0.7;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1.08);
+    opacity: 0;
+  }
+}
+
+@keyframes universePortalCrest {
+  0% {
+    opacity: 0;
+    transform: scale(0.76) translateY(14px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes universePortalOrbit {
+  0% {
+    transform: rotate(-30deg) scale(0.84);
+    opacity: 0;
+  }
+  35% {
+    opacity: 1;
+  }
+  100% {
+    transform: rotate(75deg) scale(1.1);
+    opacity: 0.85;
+  }
+}
+
+@keyframes universePortalSparkle {
+  0% {
+    opacity: 0;
+    transform: translateY(16px) scale(0.35) rotate(-18deg);
+  }
+  40% {
+    opacity: 1;
+    transform: translateY(-6px) scale(1.15) rotate(8deg);
+  }
+  100% {
+    opacity: 0.25;
+    transform: translateY(-28px) scale(0.75) rotate(24deg);
+  }
+}
+
+@keyframes universePortalReducedIn {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes fadeIn {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+.universe-portal-wave {
+  animation: universePortalWave 540ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  will-change: transform, opacity;
+}
+
+.universe-portal-ring {
+  animation: universePortalRing 700ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  will-change: transform, opacity;
+}
+
+.universe-portal-crest {
+  animation: universePortalCrest 420ms 140ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: transform, opacity;
+}
+
+.universe-portal-orbit {
+  animation: universePortalOrbit 950ms 100ms ease-out both;
+  will-change: transform, opacity;
+}
+
+.universe-portal-sparkle {
+  animation: universePortalSparkle 860ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: transform, opacity;
+}
+
+.universe-portal-reduced-in {
+  animation: universePortalReducedIn 260ms ease-out forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *:not(.universe-transition-overlay):not(.universe-transition-overlay *),
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

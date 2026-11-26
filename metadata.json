@@ -1,0 +1,6 @@
+{
+  "name": "Nocturna — Curadoria de Terror & Thriller",
+  "description": "Descubra filmes de terror e thriller passando capas, com nota do IMDb, sinopse breve, filtros avançados e curadoria de raridades.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
