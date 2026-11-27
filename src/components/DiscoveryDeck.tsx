@@ -570,7 +570,7 @@ export function DiscoveryDeck({
         {/* Left Column: Interactive Swipeable Poster Deck */}
         <div className="lg:col-span-5 flex flex-col items-center">
           <div
-            className="relative w-full max-w-[332px] sm:max-w-[345px] lg:max-w-[355px]"
+            className="relative w-full max-w-[min(308px,36svh)] sm:max-w-[340px] lg:max-w-[355px]"
             style={{ aspectRatio: '2 / 3' }}
           >
             <AnimatePresence custom={exitDirection} initial={false}>
@@ -696,7 +696,7 @@ export function DiscoveryDeck({
           </div>
 
           {/* 4-Way Native Decision Controls: Não curti / Já vi · Curti / Pular / Quero ver */}
-          <div className="mx-auto w-full max-w-[332px] sm:max-w-[345px] lg:max-w-none space-y-3">
+          <div className="mx-auto w-full max-w-[332px] sm:max-w-[345px] lg:max-w-none space-y-2.5 lg:space-y-3">
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:gap-2.5">
               <button
                 type="button"
@@ -742,13 +742,13 @@ export function DiscoveryDeck({
             </div>
 
             {/* Contextual Utility Row */}
-            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 text-xs">
-              <div className="flex flex-wrap items-center gap-4">
+            <div className="flex items-center justify-between gap-2 lg:flex-wrap lg:gap-x-4 lg:gap-y-2 text-xs">
+              <div className="flex w-full lg:w-auto items-center justify-between lg:justify-start gap-2 sm:gap-4">
                 <button
                   type="button"
                   onClick={onUndo}
                   disabled={!canUndo}
-                  className="inline-flex min-h-[34px] items-center gap-1.5 font-medium text-[#6E5660] hover:text-[#2D1E25] dark:text-zinc-400 dark:hover:text-zinc-100 disabled:opacity-40 disabled:pointer-events-none transition-colors whitespace-nowrap"
+                  className="inline-flex min-h-[36px] items-center gap-1.5 font-medium text-[#6E5660] hover:text-[#2D1E25] dark:text-zinc-400 dark:hover:text-zinc-100 disabled:opacity-40 disabled:pointer-events-none transition-colors whitespace-nowrap"
                 >
                   <Undo2 className="h-3.5 w-3.5" aria-hidden="true" />
                   <span>Desfazer</span>
@@ -758,7 +758,7 @@ export function DiscoveryDeck({
                   type="button"
                   onClick={() => onFindSimilar(currentMovie)}
                   disabled={isFindingSimilar}
-                  className="inline-flex min-h-[34px] items-center gap-1.5 font-medium text-[#A62E4F] hover:text-[#8E2341] dark:text-rose-400 dark:hover:text-rose-300 disabled:opacity-60 transition-colors whitespace-nowrap"
+                  className="inline-flex min-h-[36px] items-center gap-1.5 font-medium text-[#A62E4F] hover:text-[#8E2341] dark:text-rose-400 dark:hover:text-rose-300 disabled:opacity-60 transition-colors whitespace-nowrap"
                 >
                   {isFindingSimilar ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
@@ -772,17 +772,24 @@ export function DiscoveryDeck({
                     {isFindingSimilar ? 'Buscando filmes parecidos...' : 'Mais parecidos com este'}
                   </span>
                 </button>
+
                 <button
                   type="button"
+                  data-testid="deck-avoid-preferences-btn"
                   onClick={onOpenAvoidPreferences}
-                  className={`inline-flex min-h-[34px] items-center gap-1.5 font-medium transition-colors whitespace-nowrap ${
+                  className={`inline-flex min-h-[36px] items-center gap-1.5 font-medium transition-colors whitespace-nowrap ${
                     activeAvoidCount > 0
                       ? 'text-[#A62E4F] hover:text-[#8E2341] dark:text-rose-400 dark:hover:text-rose-300'
                       : 'text-[#6E5660] hover:text-[#2D1E25] dark:text-zinc-400 dark:hover:text-zinc-100'
                   }`}
                 >
                   <Ban className="h-3.5 w-3.5" aria-hidden="true" />
-                  <span>{activeAvoidCount > 0 ? `Evitar (${activeAvoidCount})` : 'Evitar estilos'}</span>
+                  <span className="lg:hidden">
+                    {activeAvoidCount > 0 ? `Evitar (${activeAvoidCount})` : 'Evitar'}
+                  </span>
+                  <span className="hidden lg:inline">
+                    {activeAvoidCount > 0 ? `Evitar (${activeAvoidCount})` : 'Evitar estilos'}
+                  </span>
                 </button>
               </div>
 
@@ -806,15 +813,6 @@ export function DiscoveryDeck({
                   Marcar clássicos / importar lista
                 </button>
               </div>
-
-              <button
-                type="button"
-                onClick={() => onInspectMovie(currentMovie)}
-                className="inline-flex lg:hidden min-h-[34px] items-center gap-1 text-[#5C454F] hover:text-[#2D1E25] dark:text-zinc-400 dark:hover:text-zinc-100 transition-colors whitespace-nowrap"
-              >
-                <Info className="h-3.5 w-3.5" aria-hidden="true" />
-                <span>Detalhes</span>
-              </button>
             </div>
 
             {/* Native Live Taste Calibration Strip (Desktop) */}
