@@ -1,4 +1,4 @@
-import { ChevronDown, RotateCcw, Search, SlidersHorizontal, Snowflake, X } from 'lucide-react';
+import { Ban, ChevronDown, RotateCcw, Search, SlidersHorizontal, Snowflake, X } from 'lucide-react';
 import type {
   AppUniverse,
   AudioFilter,
@@ -16,6 +16,8 @@ interface FilterBarProps {
   onChange: (next: FilterState) => void;
   totalMatching: number;
   contextLabel: string;
+  activeAvoidCount: number;
+  onOpenAvoidPreferences: () => void;
   mobileOpen: boolean;
   onCloseMobile: () => void;
 }
@@ -37,7 +39,7 @@ const OBSCURITY_OPTIONS: Array<{ value: ObscurityFilter; label: string }> = [
 
 const DECADE_OPTIONS: Array<{ value: DecadeFilter; label: string }> = [
   { value: 'all', label: 'Todas as épocas' },
-  { value: 'recent', label: 'Recentes (Lançamentos)' },
+  { value: 'recent', label: 'Recentes' },
   { value: '2020s', label: '2020s' },
   { value: '2010s', label: '2010s' },
   { value: '2000s', label: '2000s' },
@@ -57,6 +59,8 @@ export function FilterBar({
   onChange,
   totalMatching,
   contextLabel,
+  activeAvoidCount,
+  onOpenAvoidPreferences,
   mobileOpen,
   onCloseMobile,
 }: FilterBarProps) {
@@ -106,10 +110,10 @@ export function FilterBar({
           </div>
         </div>
 
-        {/* Row 1: Search + Depth + IMDb + Decade + Audio + Count */}
-        <div className="flex flex-wrap md:flex-nowrap items-center gap-2">
+        {/* Row 1: Search + Depth + IMDb + Decade + Audio + Avoid + Count */}
+        <div className="flex flex-wrap items-center gap-2">
           {/* Search input */}
-          <div className="relative w-full md:w-44 lg:w-52 shrink">
+          <div className="relative w-full md:w-44 lg:w-48 shrink-0">
             <label htmlFor="movie-search" className="sr-only">
               Buscar por título, diretor ou país
             </label>
@@ -236,34 +240,41 @@ export function FilterBar({
             />
           </div>
 
-          {/* Match count + clear (Desktop) */}
-          <div className="ml-auto hidden md:flex items-center gap-2.5 text-xs text-[#6E5660] dark:text-zinc-400 shrink-0">
-            <span className="font-mono-num whitespace-nowrap">
-              {totalMatching} {totalMatching === 1 ? 'filme' : 'filmes'} · {contextLabel}
-            </span>
-            {hasActiveFilters && (
-              <button
-                type="button"
-                onClick={() => onChange(DEFAULT_FILTERS)}
-                className="inline-flex items-center gap-1 text-xs font-medium text-[#A62E4F] hover:text-[#8E2341] dark:text-rose-400 dark:hover:text-rose-300 transition-colors whitespace-nowrap shrink-0"
-              >
-                <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
-                Limpar
-              </button>
-            )}
-          </div>
+          {/* Natural Curated Exclusions ("Evitar") Trigger */}
+          <button
+            type="button"
+            data-testid="open-avoid-preferences-btn"
+            onClick={() => {
+              onCloseMobile();
+              onOpenAvoidPreferences();
+            }}
+            aria-label={
+              activeAvoidCount > 0
+                ? `O que evitar na curadoria (${activeAvoidCount} ativos)`
+                : 'Definir o que evitar na curadoria'
+            }
+            className={`inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium transition-colors whitespace-nowrap ${
+              activeAvoidCount > 0
+                ? 'border-[#BE3A5E]/60 bg-[#F7E0E6] text-[#8E2341] hover:bg-[#F3D2DC] dark:border-rose-500/50 dark:bg-rose-950/35 dark:text-rose-200 dark:hover:bg-rose-950/55'
+                : 'border-[#DEC9BF] bg-[#FAF3EE] text-[#4C3741] hover:border-[#CBB0A3] hover:text-[#2D1E25] dark:border-zinc-800 dark:bg-[#141418] dark:text-zinc-300 dark:hover:border-zinc-700 dark:hover:text-zinc-100'
+            }`}
+          >
+            <Ban className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+            <span>{activeAvoidCount > 0 ? `Evitar (${activeAvoidCount})` : 'Evitar'}</span>
+          </button>
         </div>
 
-        {/* Subgenre horizontal interactive strip */}
-        <div
-          role="group"
-          aria-label="Filtrar por subgênero"
-          className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5"
-        >
-          <SlidersHorizontal
-            className="mr-1 hidden h-3.5 w-3.5 shrink-0 text-[#846B75] dark:text-zinc-500 md:block"
-            aria-hidden="true"
-          />
+        {/* Row 2: Subgenre horizontal interactive strip + Desktop match count */}
+        <div className="flex items-center justify-between gap-3">
+          <div
+            role="group"
+            aria-label="Filtrar por subgênero"
+            className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5"
+          >
+            <SlidersHorizontal
+              className="mr-1 hidden h-3.5 w-3.5 shrink-0 text-[#846B75] dark:text-zinc-500 md:block"
+              aria-hidden="true"
+            />
           {subgenreOptions.map((option) => {
             const active = filters.subgenre === option.value;
             const isChristmas = universe === 'matine' && option.value === 'Natal & Fim de Ano';
@@ -309,6 +320,24 @@ export function FilterBar({
               </button>
             );
           })}
+          </div>
+
+          {/* Match count + clear (Desktop) */}
+          <div className="hidden md:flex items-center gap-2.5 text-xs text-[#6E5660] dark:text-zinc-400 shrink-0">
+            <span className="font-mono-num whitespace-nowrap">
+              {totalMatching} {totalMatching === 1 ? 'filme' : 'filmes'} · {contextLabel}
+            </span>
+            {hasActiveFilters && (
+              <button
+                type="button"
+                onClick={() => onChange(DEFAULT_FILTERS)}
+                className="inline-flex items-center gap-1 text-xs font-medium text-[#A62E4F] hover:text-[#8E2341] dark:text-rose-400 dark:hover:text-rose-300 transition-colors whitespace-nowrap shrink-0"
+              >
+                <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+                Limpar
+              </button>
+            )}
+          </div>
         </div>
       </div>
     </section>

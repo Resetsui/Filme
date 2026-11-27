@@ -71,11 +71,17 @@ export interface HistoryAction {
   newStatus: MovieDecision;
 }
 
+export interface AvoidPreferences {
+  presets: string[];
+  customNotes: string[];
+}
+
 export interface UserLibraryState {
   entries: Record<string, UserMovieEntry>;
   history: HistoryAction[];
   discoveredMovies: Movie[];
   customSeenTitles: string[];
+  avoidPreferences: AvoidPreferences;
 }
 
 export interface TasteProfile {

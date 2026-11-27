@@ -321,6 +321,40 @@
         }
       },
       "required": ["ownerId", "chunkId", "titles", "createdAt", "updatedAt"]
+    },
+    "CuratorPreferences": {
+      "title": "CuratorPreferences",
+      "description": "Per-universe persistent curation avoidance preferences (presets and custom natural-language blocks) synced across devices.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "universe": {
+          "type": "string",
+          "enum": ["nocturna", "matine"],
+          "maxLength": 16
+        },
+        "presets": {
+          "type": "array",
+          "description": "Up to 20 blocked curation preset identifiers (e.g., asian-cinema)."
+        },
+        "customNotes": {
+          "type": "array",
+          "description": "Up to 20 natural-language custom avoidance rules (up to 80 chars each)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["ownerId", "universe", "presets", "customNotes", "createdAt", "updatedAt"]
     }
   },
   "firestore": {
@@ -351,6 +385,10 @@
     "/users/{userId}/romcomExternalSeen/{chunkId}": {
       "schema": { "$ref": "#/entities/ExternalSeenChunk" },
       "description": "Matinê (Romantic Comedy) isolated bounded chunks of imported watched titles."
+    },
+    "/users/{userId}/preferences/{universeId}": {
+      "schema": { "$ref": "#/entities/CuratorPreferences" },
+      "description": "Isolated per-universe curation avoidance preferences (blocked presets and custom notes)."
     }
   }
 }

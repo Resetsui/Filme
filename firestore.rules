@@ -28,6 +28,10 @@ service cloud.firestore {
       return id is string && id.size() >= 1 && id.size() <= 64 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
+    function isValidUniverseId(id) {
+      return id is string && id.size() <= 16 && id in ['nocturna', 'matine'];
+    }
+
     function incoming() {
       return request.resource.data;
     }
@@ -207,6 +211,28 @@ service cloud.firestore {
         && data.titles[0] is string
         && data.titles[0].size() >= 1
         && data.titles[0].size() <= 160
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    // Validation Blueprint: CuratorPreferences
+    function isValidCuratorPreferences(data, userId, universeId) {
+      return data.keys().hasAll(['ownerId', 'universe', 'presets', 'customNotes', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['ownerId', 'universe', 'presets', 'customNotes', 'createdAt', 'updatedAt'])
+        && data.ownerId is string
+        && data.ownerId.size() <= 128
+        && data.ownerId == userId
+        && data.ownerId == request.auth.uid
+        && data.universe is string
+        && data.universe.size() <= 16
+        && data.universe == universeId
+        && isValidUniverseId(data.universe)
+        && data.presets is list
+        && data.presets.size() <= 20
+        && (data.presets.size() == 0 || (data.presets[0] is string && data.presets[0].size() >= 1 && data.presets[0].size() <= 60))
+        && data.customNotes is list
+        && data.customNotes.size() <= 20
+        && (data.customNotes.size() == 0 || (data.customNotes[0] is string && data.customNotes[0].size() >= 1 && data.customNotes[0].size() <= 80))
         && data.createdAt is timestamp
         && data.updatedAt is timestamp;
     }
@@ -435,6 +461,35 @@ service cloud.firestore {
           && parentUserExists(userId);
 
         allow delete: if isOwner(userId) && isValidId(userId) && isValidChunkId(chunkId);
+      }
+
+      // Subcollection: /users/{userId}/preferences/{universeId}
+      match /preferences/{universeId} {
+        allow get: if isOwner(userId) && isValidId(userId) && isValidUniverseId(universeId);
+        allow list: if isOwner(userId) && resource.data.ownerId == request.auth.uid;
+
+        allow create: if isOwner(userId)
+          && isValidId(userId)
+          && isValidUniverseId(universeId)
+          && isValidCuratorPreferences(incoming(), userId, universeId)
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && parentUserExists(userId);
+
+        allow update: if isOwner(userId)
+          && isValidId(userId)
+          && isValidUniverseId(universeId)
+          && isValidCuratorPreferences(incoming(), userId, universeId)
+          && incoming().ownerId == existing().ownerId
+          && incoming().universe == existing().universe
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly(['presets', 'customNotes', 'updatedAt'])
+          )
+          && parentUserExists(userId);
+
+        allow delete: if isOwner(userId) && isValidId(userId) && isValidUniverseId(universeId);
       }
     }
   }

@@ -20,6 +20,8 @@ interface DiscoverModalProps {
     likedExamples: string[];
     dislikedExamples: string[];
   };
+  avoidLabels: string[];
+  onOpenAvoidPreferences: () => void;
   isLoading: boolean;
   errorMessage: string | null;
   onClose: () => void;
@@ -41,6 +43,8 @@ export function DiscoverModal({
   universeConfig,
   initialFilters,
   tasteSummary,
+  avoidLabels,
+  onOpenAvoidPreferences,
   isLoading,
   errorMessage,
   onClose,
@@ -151,6 +155,28 @@ export function DiscoverModal({
                 Evitando pegada de: {tasteSummary.dislikedExamples.slice(0, 3).join(', ')}
               </p>
             )}
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-[#E3CFC6]/70 dark:border-zinc-800/80">
+              <p className="truncate text-[#6E5660] dark:text-zinc-400">
+                {avoidLabels.length > 0 ? (
+                  <>
+                    <span className="font-medium text-[#8E2341] dark:text-rose-300">
+                      Bloqueando:
+                    </span>{' '}
+                    {avoidLabels.slice(0, 3).join(', ')}
+                    {avoidLabels.length > 3 ? ` +${avoidLabels.length - 3}` : ''}
+                  </>
+                ) : (
+                  'Sem bloqueios de região ou estilo definidos.'
+                )}
+              </p>
+              <button
+                type="button"
+                onClick={onOpenAvoidPreferences}
+                className="font-medium text-[#A62E4F] hover:text-[#8E2341] dark:text-rose-400 dark:hover:text-rose-300 underline underline-offset-2 whitespace-nowrap shrink-0"
+              >
+                {avoidLabels.length > 0 ? 'Editar bloqueios' : 'Definir o que evitar'}
+              </button>
+            </div>
           </div>
 
           {/* Personalized Matinê Christmas Rom-Com Quick Toggle */}
@@ -209,20 +235,31 @@ export function DiscoverModal({
               value={mood}
               onChange={(e) => setMood(e.target.value)}
               maxLength={240}
-              placeholder={universeConfig.moodPlaceholder}
+              placeholder={
+                avoidLabels.includes('Cinema asiático') && universeConfig.id === 'nocturna'
+                  ? 'Ex.: algo tenso como A Bruxa ou Hereditário, mas que pouca gente conhece...'
+                  : universeConfig.moodPlaceholder
+              }
               className="w-full rounded-xl border border-[#DEC9BF] bg-[#F5EAE4] px-3.5 py-2.5 text-sm text-[#2D1E25] placeholder:text-[#8E737D] focus:border-[#BE3A5E]/60 focus:bg-[#FCF8F5] focus:outline-none focus:ring-1 focus:ring-[#BE3A5E] dark:border-zinc-800 dark:bg-[#17171C] dark:text-zinc-100 dark:placeholder:text-zinc-500 dark:focus:border-zinc-600 dark:focus:bg-[#17171C] dark:focus:ring-rose-500"
             />
             <div className="flex flex-wrap gap-1.5 pt-0.5">
-              {universeConfig.moodPresets.map((preset) => (
-                <button
-                  key={preset}
-                  type="button"
-                  onClick={() => setMood(preset)}
-                  className="rounded-md border border-[#E1CEC4] bg-[#F2E6DF] px-2.5 py-1.5 text-[11px] text-[#5C454F] hover:border-[#CBB0A3] hover:bg-[#EAD9D1] hover:text-[#2D1E25] dark:border-zinc-800 dark:bg-[#16161B] dark:text-zinc-400 dark:hover:border-zinc-600 dark:hover:text-zinc-100 transition-colors"
-                >
-                  {preset}
-                </button>
-              ))}
+              {universeConfig.moodPresets
+                .map((preset) =>
+                  avoidLabels.includes('Cinema asiático') &&
+                  preset.toLowerCase().includes('asiático')
+                    ? 'Terror europeu ou sul-americano pouco conhecido'
+                    : preset,
+                )
+                .map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => setMood(preset)}
+                    className="rounded-md border border-[#E1CEC4] bg-[#F2E6DF] px-2.5 py-1.5 text-[11px] text-[#5C454F] hover:border-[#CBB0A3] hover:bg-[#EAD9D1] hover:text-[#2D1E25] dark:border-zinc-800 dark:bg-[#16161B] dark:text-zinc-400 dark:hover:border-zinc-600 dark:hover:text-zinc-100 transition-colors"
+                  >
+                    {preset}
+                  </button>
+                ))}
             </div>
           </div>
 

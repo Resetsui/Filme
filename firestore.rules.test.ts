@@ -25,7 +25,7 @@ test('Dirty Dozen security invariants are structurally enforced in firestore.rul
   // 3. No blanket list on users; resource.data.ownerId check on subcollection lists
   assert.match(rules, /match \/users\/\{userId\}[\s\S]*allow list: if false;/);
   const listMatches = rules.match(/allow list: if isOwner\(userId\) && resource\.data\.ownerId == request\.auth\.uid;/g);
-  assert.equal(listMatches?.length, 6, 'All 6 subcollections (Nocturna + Matinê) must enforce resource.data.ownerId on list');
+  assert.equal(listMatches?.length, 7, 'All 7 subcollections (Nocturna + Matinê + Preferences) must enforce resource.data.ownerId on list');
 
   // 4. Master Gate parent existence check on subcollections
   assert.match(rules, /function parentUserExists\(userId\)/);
@@ -38,6 +38,7 @@ test('Dirty Dozen security invariants are structurally enforced in firestore.rul
     'isValidDiscoveredMovie',
     'isValidRomcomDiscoveredMovie',
     'isValidExternalSeenChunk',
+    'isValidCuratorPreferences',
   ]) {
     assert.ok(rules.includes(`function ${helper}`), `Missing validation blueprint ${helper}`);
   }
@@ -48,11 +49,13 @@ test('Dirty Dozen security invariants are structurally enforced in firestore.rul
   assert.match(rules, /incoming\(\)\.updatedAt == request\.time/);
   assert.match(rules, /incoming\(\)\.createdAt == existing\(\)\.createdAt/);
 
-  // 7. Bounded array check on externalSeen chunks
+  // 7. Bounded array check on externalSeen chunks and preferences
   assert.match(rules, /data\.titles\.size\(\) <= 100/);
   assert.match(rules, /data\.titles\[0\] is string/);
+  assert.match(rules, /data\.presets\.size\(\) <= 20/);
+  assert.match(rules, /data\.customNotes\.size\(\) <= 20/);
 
   // 8. Every collection in blueprint is matched in rules
   const blueprintCollections = Object.keys(blueprint.firestore);
-  assert.equal(blueprintCollections.length, 7);
+  assert.equal(blueprintCollections.length, 8);
 });

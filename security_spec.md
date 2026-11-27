@@ -1,11 +1,11 @@
 # Nocturna Security Specification (Phase 0 — Payload-First Security TDD)
 
 ## 1. Data Invariants
-1. **Strict Ownership & Verified Identity**: Only an authenticated user with `request.auth.token.email_verified == true` and `request.auth.uid == userId` may read, list, create, update, or delete their own documents under `/users/{userId}` and its subcollections (`entries`, `discoveredMovies`, `externalSeen`).
-2. **Master Gate**: No subcollection document (`entries`, `discoveredMovies`, `externalSeen`) may be created or updated unless the parent `/users/{userId}` document exists.
-3. **Immutable Ownership & Timestamps**: `uid`, `ownerId`, `movieId`, `id`, `chunkId`, and `createdAt` cannot be modified after creation. `createdAt == request.time` on `create`, and `updatedAt == request.time` on both `create` and `update`.
+1. **Strict Ownership & Verified Identity**: Only an authenticated user with `request.auth.token.email_verified == true` and `request.auth.uid == userId` may read, list, create, update, or delete their own documents under `/users/{userId}` and its subcollections (`entries`, `discoveredMovies`, `externalSeen`, `romcomEntries`, `romcomDiscoveredMovies`, `romcomExternalSeen`, `preferences`).
+2. **Master Gate**: No subcollection document may be created or updated unless the parent `/users/{userId}` document exists.
+3. **Immutable Ownership & Timestamps**: `uid`, `ownerId`, `movieId`, `id`, `chunkId`, `universe`, and `createdAt` cannot be modified after creation. `createdAt == request.time` on `create`, and `updatedAt == request.time` on both `create` and `update`.
 4. **No Shadow Fields**: Every `create` enforces `hasAll` + `hasOnly`; every `update` enforces `affectedKeys().hasOnly(...)` inside action branches wrapped by `isValid[Entity](incoming(), ...)`.
-5. **Bounded Sizes & Path Hardening**: All single-document path IDs must pass `isValidId()` (`^[a-zA-Z0-9_\-]+$`, `<= 128` chars), all strings enforce explicit `.size()` bounds matching `firebase-blueprint.json`, and `externalSeen.titles` is strictly bounded (`1..100` items, first element string `<= 160` chars).
+5. **Bounded Sizes & Path Hardening**: All single-document path IDs must pass `isValidId()` (`^[a-zA-Z0-9_\-]+$`, `<= 128` chars), all strings enforce explicit `.size()` bounds matching `firebase-blueprint.json`, `externalSeen.titles` is strictly bounded (`1..100` items), and `preferences.presets` / `preferences.customNotes` are strictly bounded (`0..20` items).
 6. **Zero Blanket Reads / Secure List Queries**: `/users` cannot be listed. Subcollection `allow list` rules strictly evaluate `resource.data.ownerId == request.auth.uid` without any `get()` or `exists()` calls.
 
 ## 2. The "Dirty Dozen" Adversarial Payloads (All Must Result in `PERMISSION_DENIED`)

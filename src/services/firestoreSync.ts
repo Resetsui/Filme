@@ -19,6 +19,7 @@ import {
 import { OperationType, db, handleFirestoreError } from '../firebase';
 import type {
   AppUniverse,
+  AvoidPreferences,
   HorrorSubgenre,
   Movie,
   ObscurityTier,
@@ -28,6 +29,7 @@ import type {
   UserLibraryState,
   UserMovieEntry,
 } from '../types/movie';
+import { sanitizeAvoidPreferences } from '../utils/exclusions';
 
 const VALID_ID_REGEX = /^[a-zA-Z0-9_-]{1,128}$/;
 
@@ -325,16 +327,52 @@ export async function syncExternalSeenTitlesToCloud(
   }
 }
 
+export async function syncAvoidPreferencesToCloud(
+  uid: string,
+  universe: AppUniverse,
+  prefs: AvoidPreferences,
+): Promise<void> {
+  const safe = sanitizeAvoidPreferences(prefs);
+  const prefPath = `users/${uid}/preferences/${universe}`;
+  const ref = doc(db, 'users', uid, 'preferences', universe);
+
+  try {
+    const existing = await getDoc(ref);
+    if (!existing.exists()) {
+      await setDoc(ref, {
+        ownerId: uid,
+        universe,
+        presets: safe.presets,
+        customNotes: safe.customNotes,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    } else {
+      await updateDoc(ref, {
+        presets: safe.presets,
+        customNotes: safe.customNotes,
+        updatedAt: serverTimestamp(),
+      });
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, prefPath);
+  }
+}
+
 export async function mergeLocalLibraryIntoCloud(
   uid: string,
   universe: AppUniverse,
   localState: UserLibraryState,
 ): Promise<void> {
   const entriesEntries = Object.entries(localState.entries);
+  const hasLocalAvoids =
+    (localState.avoidPreferences?.presets.length ?? 0) > 0 ||
+    (localState.avoidPreferences?.customNotes.length ?? 0) > 0;
   if (
     entriesEntries.length === 0 &&
     localState.discoveredMovies.length === 0 &&
-    localState.customSeenTitles.length === 0
+    localState.customSeenTitles.length === 0 &&
+    !hasLocalAvoids
   ) {
     return;
   }
@@ -376,6 +414,25 @@ export async function mergeLocalLibraryIntoCloud(
         await syncExternalSeenTitlesToCloud(uid, universe, mergedTitles);
       }
     }
+
+    if (hasLocalAvoids) {
+      const prefRef = doc(db, 'users', uid, 'preferences', universe);
+      const prefSnap = await getDoc(prefRef);
+      const cloudPrefs = prefSnap.exists()
+        ? sanitizeAvoidPreferences(prefSnap.data())
+        : { presets: [], customNotes: [] };
+      const mergedPrefs = sanitizeAvoidPreferences({
+        presets: [...cloudPrefs.presets, ...localState.avoidPreferences.presets],
+        customNotes: [...cloudPrefs.customNotes, ...localState.avoidPreferences.customNotes],
+      });
+      const changed =
+        mergedPrefs.presets.length !== cloudPrefs.presets.length ||
+        mergedPrefs.customNotes.length !== cloudPrefs.customNotes.length ||
+        !prefSnap.exists();
+      if (changed) {
+        await syncAvoidPreferencesToCloud(uid, universe, mergedPrefs);
+      }
+    }
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, basePath);
   }
@@ -385,6 +442,7 @@ export interface CloudLibrarySnapshot {
   entries: Record<string, UserMovieEntry>;
   discoveredMovies: Movie[];
   customSeenTitles: string[];
+  avoidPreferences: AvoidPreferences;
 }
 
 export function subscribeToUserLibrary(
@@ -500,9 +558,26 @@ export function subscribeToUserLibrary(
     },
   );
 
+  const prefPath = `users/${uid}/preferences/${universe}`;
+  const unsubPrefs = onSnapshot(
+    doc(db, 'users', uid, 'preferences', universe),
+    (docSnap) => {
+      if (!docSnap.exists()) return;
+      onUpdate({ avoidPreferences: sanitizeAvoidPreferences(docSnap.data()) });
+    },
+    (error) => {
+      try {
+        handleFirestoreError(error, OperationType.GET, prefPath);
+      } catch (wrapped) {
+        onError(wrapped instanceof Error ? wrapped : new Error(String(wrapped)));
+      }
+    },
+  );
+
   return () => {
     unsubEntries();
     unsubDiscovered();
     unsubExternal();
+    unsubPrefs();
   };
 }

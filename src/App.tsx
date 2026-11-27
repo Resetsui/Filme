@@ -4,7 +4,8 @@
  */
 
 import { onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { AvoidPreferencesModal } from './components/AvoidPreferencesModal';
 import { BatchSeenModal } from './components/BatchSeenModal';
 import { DiscoverModal } from './components/DiscoverModal';
 import { DiscoveryDeck } from './components/DiscoveryDeck';
@@ -25,6 +26,7 @@ import {
   ensureUserProfile,
   mergeLocalLibraryIntoCloud,
   subscribeToUserLibrary,
+  syncAvoidPreferencesToCloud,
   syncDiscoveredMoviesToCloud,
   syncExternalSeenTitlesToCloud,
   syncMovieEntryToCloud,
@@ -33,6 +35,7 @@ import type {
   AppTab,
   AppUniverse,
   AudioFilter,
+  AvoidPreferences,
   DecadeFilter,
   FilterState,
   Movie,
@@ -42,6 +45,19 @@ import type {
   Subgenre,
   UserLibraryState,
 } from './types/movie';
+import {
+  EMPTY_DECK_QUEUE,
+  reconcileDeckQueue,
+  resolveDeckMovies,
+  type DeckQueueState,
+  type DeckReconcileMode,
+} from './utils/deckQueue';
+import {
+  countActiveAvoids,
+  getActiveAvoidLabels,
+  isMovieBlockedByPreferences,
+  sanitizeAvoidPreferences,
+} from './utils/exclusions';
 import {
   DEFAULT_FILTERS,
   applyMovieDecision,
@@ -115,9 +131,18 @@ export default function App() {
 
   // Modals & AI states
   const [isDiscoverOpen, setIsDiscoverOpen] = useState(false);
+  const [isAvoidOpen, setIsAvoidOpen] = useState(false);
   const [isBatchSeenOpen, setIsBatchSeenOpen] = useState(false);
   const [selectedDetailMovie, setSelectedDetailMovie] = useState<Movie | null>(null);
   const [rouletteMovie, setRouletteMovie] = useState<Movie | null>(null);
+
+  // Explicit deck queue transition signal (background syncs/AI arrivals leave seq unchanged)
+  const [queueSignal, setQueueSignal] = useState<{
+    seq: number;
+    mode: DeckReconcileMode;
+    actedMovieId?: string | null;
+    pinnedMovieId?: string | null;
+  }>({ seq: 0, mode: 'reset' });
 
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [isFindingSimilar, setIsFindingSimilar] = useState(false);
@@ -195,6 +220,7 @@ export default function App() {
           entries: state.entries,
           discoveredMovies: state.discoveredMovies,
           customSeenTitles: state.customSeenTitles,
+          avoidPreferences: state.avoidPreferences,
         }),
       );
     } catch {
@@ -204,6 +230,7 @@ export default function App() {
     libraries.nocturna.entries,
     libraries.nocturna.discoveredMovies,
     libraries.nocturna.customSeenTitles,
+    libraries.nocturna.avoidPreferences,
   ]);
 
   // Persist Matinê library exclusively to its own isolated storage key
@@ -216,6 +243,7 @@ export default function App() {
           entries: state.entries,
           discoveredMovies: state.discoveredMovies,
           customSeenTitles: state.customSeenTitles,
+          avoidPreferences: state.avoidPreferences,
         }),
       );
     } catch {
@@ -225,6 +253,7 @@ export default function App() {
     libraries.matine.entries,
     libraries.matine.discoveredMovies,
     libraries.matine.customSeenTitles,
+    libraries.matine.avoidPreferences,
   ]);
 
   // Firebase Auth listener (runs once)
@@ -290,6 +319,7 @@ export default function App() {
               entries: partial.entries ?? prev.entries,
               discoveredMovies: partial.discoveredMovies ?? prev.discoveredMovies,
               customSeenTitles: partial.customSeenTitles ?? prev.customSeenTitles,
+              avoidPreferences: partial.avoidPreferences ?? prev.avoidPreferences,
             }));
             setSyncStatus('synced');
           },
@@ -323,6 +353,7 @@ export default function App() {
       setPinnedMovieId(null);
       setMobileFiltersOpen(false);
       setIsDiscoverOpen(false);
+      setIsAvoidOpen(false);
       setIsBatchSeenOpen(false);
       setSelectedDetailMovie(null);
       setRouletteMovie(null);
@@ -469,10 +500,86 @@ export default function App() {
     return [...library.customSeenTitles, ...catalogTitles];
   }, [fullCatalog, library.customSeenTitles]);
 
-  const discoverList = useMemo(() => {
-    const filtered = filterMovies(fullCatalog, filters, library.entries, 'discover');
+  const rankedDiscoverCandidates = useMemo(() => {
+    const filtered = filterMovies(
+      fullCatalog,
+      filters,
+      library.entries,
+      'discover',
+      library.avoidPreferences,
+      universe,
+    );
     return rankMoviesByTaste(filtered, tasteProfile, pinnedMovieId);
-  }, [fullCatalog, filters, library.entries, tasteProfile, pinnedMovieId]);
+  }, [
+    fullCatalog,
+    filters,
+    library.entries,
+    library.avoidPreferences,
+    universe,
+    tasteProfile,
+    pinnedMovieId,
+  ]);
+
+  const filterContextKey = useMemo(
+    () =>
+      JSON.stringify({
+        universe,
+        filters,
+        avoidPreferences: library.avoidPreferences,
+      }),
+    [universe, filters, library.avoidPreferences],
+  );
+
+  // StrictMode-safe synchronous stable presentation queue:
+  // Background Firestore syncs, 12h latest releases radar, and AI refills NEVER flash or
+  // replace the currently viewed card (or the peeking back card behind it).
+  const committedQueueRef = useRef<DeckQueueState>(EMPTY_DECK_QUEUE);
+  const committedFrontRef = useRef<Movie | null>(null);
+  const committedContextRef = useRef<string>(filterContextKey);
+  const committedSignalSeqRef = useRef<number>(0);
+
+  const { nextDeckQueue, discoverList } = useMemo(() => {
+    const contextChanged = committedContextRef.current !== filterContextKey;
+    const signalChanged = committedSignalSeqRef.current !== queueSignal.seq;
+
+    let nextQueue: DeckQueueState;
+    if (contextChanged) {
+      nextQueue = reconcileDeckQueue(committedQueueRef.current, rankedDiscoverCandidates, {
+        mode: 'reset',
+      });
+    } else if (signalChanged) {
+      nextQueue = reconcileDeckQueue(committedQueueRef.current, rankedDiscoverCandidates, {
+        mode: queueSignal.mode,
+        actedMovieId: queueSignal.actedMovieId,
+        pinnedMovieId: queueSignal.pinnedMovieId,
+      });
+    } else {
+      nextQueue = reconcileDeckQueue(committedQueueRef.current, rankedDiscoverCandidates, {
+        mode: 'background',
+        previousFrontMovie: committedFrontRef.current,
+      });
+    }
+
+    const resolved = resolveDeckMovies(nextQueue, rankedDiscoverCandidates);
+    return { nextDeckQueue: nextQueue, discoverList: resolved };
+  }, [rankedDiscoverCandidates, filterContextKey, queueSignal]);
+
+  useLayoutEffect(() => {
+    committedQueueRef.current = nextDeckQueue;
+    committedFrontRef.current = discoverList[0] ?? null;
+    committedContextRef.current = filterContextKey;
+    committedSignalSeqRef.current = queueSignal.seq;
+  }, [nextDeckQueue, discoverList, filterContextKey, queueSignal.seq]);
+
+  const activeAvoidCount = useMemo(
+    () => countActiveAvoids(library.avoidPreferences),
+    [library.avoidPreferences],
+  );
+
+  const activeAvoidLabels = useMemo(
+    () => getActiveAvoidLabels(library.avoidPreferences, universe),
+    [library.avoidPreferences, universe],
+  );
 
   const watchlistMovies = useMemo(
     () => filterMovies(fullCatalog, filters, library.entries, 'watchlist'),
@@ -502,6 +609,8 @@ export default function App() {
       const batchNumber = batchCounterRef.current[targetUniverse];
       batchCounterRef.current[targetUniverse] += 1;
 
+      const currentAvoidPreferences = librariesRef.current[targetUniverse].avoidPreferences;
+
       const response = await fetch('/api/discover', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -521,6 +630,7 @@ export default function App() {
           skippedTitles: tasteProfile.skippedTitles,
           preferredSubgenres: tasteProfile.preferredSubgenres,
           avoidedSubgenres: tasteProfile.avoidedSubgenres,
+          avoidPreferences: currentAvoidPreferences,
           excludeTitles,
           anchorMovie: options.anchorMovie
             ? {
@@ -538,7 +648,9 @@ export default function App() {
         throw new Error(data.error || 'Falha ao consultar a Curadoria IA.');
       }
 
-      const incoming = Array.isArray(data.movies) ? data.movies : [];
+      const incoming = (Array.isArray(data.movies) ? data.movies : []).filter(
+        (movie) => !isMovieBlockedByPreferences(movie, currentAvoidPreferences, targetUniverse),
+      );
       if (incoming.length > 0) {
         updateUniverseLibrary(targetUniverse, (prev) => ({
           ...prev,
@@ -559,7 +671,7 @@ export default function App() {
               ? options.toastMessage(incoming.length)
               : options.anchorMovie
                 ? `+${incoming.length} filmes na linha de ${options.anchorMovie.title} adicionados à fila.`
-                : `+${incoming.length} novos filmes adicionados à sua fila de descoberta.`,
+                : `+${incoming.length} novos filmes adicionados à sua fila.`,
           );
         } else {
           showToast('Nenhum título inédito retornado nesta rodada. Tente ajustar os filtros.');
@@ -604,6 +716,15 @@ export default function App() {
         }
 
         const novel = fetched.filter((movie) => {
+          if (
+            isMovieBlockedByPreferences(
+              movie,
+              currentTargetLib.avoidPreferences,
+              targetUniverse,
+            )
+          ) {
+            return false;
+          }
           const origKey = `${movie.originalTitle.toLowerCase().trim()}::${movie.year}`;
           const ptKey = `${movie.title.toLowerCase().trim()}::${movie.year}`;
           return (
@@ -637,11 +758,21 @@ export default function App() {
             existingCatalog.find(
               (m) =>
                 m.year >= new Date().getFullYear() - 1 &&
-                !librariesRef.current[targetUniverse].entries[m.id],
+                !librariesRef.current[targetUniverse].entries[m.id] &&
+                !isMovieBlockedByPreferences(
+                  m,
+                  librariesRef.current[targetUniverse].avoidPreferences,
+                  targetUniverse,
+                ),
             );
           if (newestCandidate) {
             setFilters((prev) => ({ ...prev, decade: 'recent', search: '' }));
             setPinnedMovieId(newestCandidate.id);
+            setQueueSignal((prev) => ({
+              seq: prev.seq + 1,
+              mode: 'pin',
+              pinnedMovieId: newestCandidate.id,
+            }));
             setActiveTab('discover');
           }
         }
@@ -739,7 +870,7 @@ export default function App() {
       audio: filters.audio,
       count: 10,
       prependToTop: false,
-      silent: false,
+      silent: true,
     })
       .then((incoming) => {
         if (incoming.length === 0) {
@@ -799,8 +930,7 @@ export default function App() {
       audio: filters.audio,
       count: 8,
       prependToTop: false,
-      silent: false,
-      toastMessage: (count) => `Curadoria calibrada com +${count} filmes para o seu gosto.`,
+      silent: true,
     })
       .catch(() => {
         autoRefillCooldownUntilRef.current = Date.now() + 60_000;
@@ -820,10 +950,30 @@ export default function App() {
     fetchAiRecommendations,
   ]);
 
+  const handleUpdateAvoidPreferences = useCallback(
+    (nextPrefs: AvoidPreferences) => {
+      const targetUniverse = universeRef.current;
+      const sanitized = sanitizeAvoidPreferences(nextPrefs);
+      updateUniverseLibrary(targetUniverse, (prev) => ({
+        ...prev,
+        avoidPreferences: sanitized,
+      }));
+      if (authUser?.uid) {
+        void syncAvoidPreferencesToCloud(authUser.uid, targetUniverse, sanitized).catch(() => {});
+      }
+    },
+    [authUser?.uid, updateUniverseLibrary],
+  );
+
   const handleDecision = useCallback(
     (movieId: string, decision: MovieDecision, sentiment?: SeenSentiment) => {
       const targetUniverse = universeRef.current;
       setPinnedMovieId(null);
+      setQueueSignal((prev) => ({
+        seq: prev.seq + 1,
+        mode: 'advance',
+        actedMovieId: movieId,
+      }));
       const next = applyMovieDecision(
         librariesRef.current[targetUniverse],
         movieId,
@@ -884,6 +1034,11 @@ export default function App() {
     updateUniverseLibrary(targetUniverse, () => nextState);
     if (restoredMovieId) {
       setPinnedMovieId(restoredMovieId);
+      setQueueSignal((prev) => ({
+        seq: prev.seq + 1,
+        mode: 'pin',
+        pinnedMovieId: restoredMovieId,
+      }));
       if (authUser?.uid) {
         const restoredEntry = nextState.entries[restoredMovieId];
         if (restoredEntry) {
@@ -944,6 +1099,11 @@ export default function App() {
           decade: 'all',
         });
         setPinnedMovieId(added[0].id);
+        setQueueSignal((prev) => ({
+          seq: prev.seq + 1,
+          mode: 'pin',
+          pinnedMovieId: added[0].id,
+        }));
         setActiveTab('discover');
         setIsDiscoverOpen(false);
       }
@@ -981,6 +1141,11 @@ export default function App() {
           audio: filters.audio,
         });
         setPinnedMovieId(added[0].id);
+        setQueueSignal((prev) => ({
+          seq: prev.seq + 1,
+          mode: 'pin',
+          pinnedMovieId: added[0].id,
+        }));
         setActiveTab('discover');
       }
     } catch (error) {
@@ -1003,6 +1168,7 @@ export default function App() {
     const targetUniverse = universeRef.current;
     setIsAutoRefilling(true);
     try {
+      const wasEmpty = discoverList.length === 0;
       const added = await fetchAiRecommendations({
         subgenre: filters.subgenre,
         minImdb: filters.minImdb > 0 ? filters.minImdb : 6.5,
@@ -1012,8 +1178,13 @@ export default function App() {
         count: 10,
         prependToTop: false,
       });
-      if (added.length > 0 && discoverList.length === 0 && universeRef.current === targetUniverse) {
+      if (added.length > 0 && wasEmpty && universeRef.current === targetUniverse) {
         setPinnedMovieId(added[0].id);
+        setQueueSignal((prev) => ({
+          seq: prev.seq + 1,
+          mode: 'pin',
+          pinnedMovieId: added[0].id,
+        }));
       }
     } catch (error) {
       if (universeRef.current === targetUniverse) {
@@ -1042,6 +1213,7 @@ export default function App() {
         entries: library.entries,
         discoveredMovies: library.discoveredMovies,
         customSeenTitles: library.customSeenTitles,
+        avoidPreferences: library.avoidPreferences,
         exportedAt: new Date().toISOString(),
       },
       null,
@@ -1097,7 +1269,8 @@ export default function App() {
     (filters.obscurity !== 'all' ? 1 : 0) +
     (filters.decade !== 'all' ? 1 : 0) +
     (filters.audio !== 'all' ? 1 : 0) +
-    (filters.search.trim().length > 0 ? 1 : 0);
+    (filters.search.trim().length > 0 ? 1 : 0) +
+    (activeAvoidCount > 0 ? 1 : 0);
 
   const currentTabCount =
     activeTab === 'discover'
@@ -1123,6 +1296,9 @@ export default function App() {
         onSelectTab={(tab) => {
           setActiveTab(tab);
           setMobileFiltersOpen(false);
+          if (tab === 'discover' && committedQueueRef.current.heldFrontMovie) {
+            setQueueSignal((prev) => ({ seq: prev.seq + 1, mode: 'reset' }));
+          }
         }}
         onOpenDiscover={() => {
           setAiError(null);
@@ -1149,6 +1325,8 @@ export default function App() {
         onChange={setFilters}
         totalMatching={currentTabCount}
         contextLabel={contextLabel}
+        activeAvoidCount={activeAvoidCount}
+        onOpenAvoidPreferences={() => setIsAvoidOpen(true)}
         mobileOpen={mobileFiltersOpen}
         onCloseMobile={() => setMobileFiltersOpen(false)}
       />
@@ -1181,8 +1359,17 @@ export default function App() {
             onFindSimilar={handleFindSimilar}
             onOpenBatchSeen={() => setIsBatchSeenOpen(true)}
             onCopyMatineLink={() => handleCopyUniverseLink('matine')}
-            onJumpToMovie={(id) => setPinnedMovieId(id)}
+            onJumpToMovie={(id) => {
+              setPinnedMovieId(id);
+              setQueueSignal((prev) => ({
+                seq: prev.seq + 1,
+                mode: 'pin',
+                pinnedMovieId: id,
+              }));
+            }}
             onInspectMovie={setSelectedDetailMovie}
+            activeAvoidCount={activeAvoidCount}
+            onOpenAvoidPreferences={() => setIsAvoidOpen(true)}
           />
         )}
 
@@ -1271,10 +1458,23 @@ export default function App() {
           likedExamples: [...tasteProfile.likedTitles, ...tasteProfile.watchlistTitles],
           dislikedExamples: tasteProfile.dislikedTitles,
         }}
+        avoidLabels={activeAvoidLabels}
+        onOpenAvoidPreferences={() => setIsAvoidOpen(true)}
         isLoading={isAiLoading}
         errorMessage={aiError}
-        onClose={() => setIsDiscoverOpen(false)}
+        onClose={() => {
+          if (!isAvoidOpen) setIsDiscoverOpen(false);
+        }}
         onSubmit={handleDiscoverSubmit}
+      />
+
+      <AvoidPreferencesModal
+        open={isAvoidOpen}
+        universe={universe}
+        universeName={universeConfig.name}
+        preferences={library.avoidPreferences}
+        onChange={handleUpdateAvoidPreferences}
+        onClose={() => setIsAvoidOpen(false)}
       />
 
       <BatchSeenModal

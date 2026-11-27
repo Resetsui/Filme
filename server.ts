@@ -4,6 +4,12 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
 import { runWithModelFallback } from './src/utils/aiRetry.ts';
+import {
+  buildAvoidPromptDirectives,
+  isExplorationAngleCompatible,
+  isMovieBlockedByPreferences,
+  sanitizeAvoidPreferences,
+} from './src/utils/exclusions.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1046,6 +1052,7 @@ async function startServer() {
         skippedTitles?: unknown;
         preferredSubgenres?: unknown;
         avoidedSubgenres?: unknown;
+        avoidPreferences?: unknown;
         anchorMovie?: unknown;
         batchNumber?: unknown;
         count?: unknown;
@@ -1100,6 +1107,8 @@ async function startServer() {
       const skippedTitles = sanitizeList(body.skippedTitles, 20);
       const preferredSubgenres = sanitizeList(body.preferredSubgenres, 5);
       const avoidedSubgenres = sanitizeList(body.avoidedSubgenres, 5);
+      const avoidPreferences = sanitizeAvoidPreferences(body.avoidPreferences);
+      const avoidDirectives = buildAvoidPromptDirectives(avoidPreferences, universe);
       const anchorMovie =
         body.anchorMovie && typeof body.anchorMovie === 'object'
           ? {
@@ -1157,8 +1166,12 @@ async function startServer() {
             ? 'PREFERÊNCIA DE ÁUDIO: Priorize fortemente filmes com dublagem em Português do Brasil (`hasPtBrDub: true`). Só inclua filmes apenas legendados (`hasPtBrDub: false`) se forem obras-primas imperdíveis com nota IMDb >= 7.5 que realmente compensem assistir legendado.'
             : 'Pode incluir filmes dublados em PT-BR (`hasPtBrDub: true`) e filmes apenas legendados (`hasPtBrDub: false`); informe `hasPtBrDub` com honestidade conforme o histórico de lançamento no Brasil.';
 
-      const angles =
+      const rawAngles =
         universe === 'matine' ? ROMCOM_EXPLORATION_ANGLES : HORROR_EXPLORATION_ANGLES;
+      const compatibleAngles = rawAngles.filter((angle) =>
+        isExplorationAngleCompatible(angle, avoidPreferences),
+      );
+      const angles = compatibleAngles.length > 0 ? compatibleAngles : rawAngles;
       const angleHint =
         !mood && !anchorMovie?.title && !useLiveSearch && subgenre === defaultAnyLabel
           ? angles[batchNumber % angles.length]
@@ -1205,6 +1218,9 @@ async function startServer() {
           : '',
         avoidedSubgenres.length > 0
           ? `- Subgêneros rejeitados recentemente (evite): ${avoidedSubgenres.join(', ')}`
+          : '',
+        avoidDirectives.length > 0
+          ? `- BLOQUEIOS PERMANENTES DO ESPECTADOR (PRIORIDADE MÁXIMA — NUNCA RECOMENDE FILMES QUE VIOLEM ESTAS REGRAS):\n  ${avoidDirectives.map((rule) => `• ${rule}`).join('\n  ')}`
           : '',
         skippedTitles.length > 0
           ? `- Filmes pulados recentemente (menor interesse): ${skippedTitles.join(', ')}`
@@ -1307,7 +1323,7 @@ async function startServer() {
         audioPreference,
         normalizedExcludeSet,
         minYear: useLiveSearch ? recentStartYear : 1920,
-      });
+      }).filter((movie) => !isMovieBlockedByPreferences(movie, avoidPreferences, universe));
 
       res.json({ movies });
     } catch (error) {

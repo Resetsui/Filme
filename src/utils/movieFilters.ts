@@ -1,5 +1,7 @@
 import type {
+  AppUniverse,
   AudioFilter,
+  AvoidPreferences,
   DecadeFilter,
   FilterState,
   Movie,
@@ -11,6 +13,11 @@ import type {
   UserLibraryState,
   UserMovieEntry,
 } from '../types/movie';
+import {
+  DEFAULT_AVOID_PREFERENCES,
+  isMovieBlockedByPreferences,
+  sanitizeAvoidPreferences,
+} from './exclusions';
 
 export const DEFAULT_FILTERS: FilterState = {
   subgenre: 'all',
@@ -26,6 +33,7 @@ export const INITIAL_LIBRARY_STATE: UserLibraryState = {
   history: [],
   discoveredMovies: [],
   customSeenTitles: [],
+  avoidPreferences: DEFAULT_AVOID_PREFERENCES,
 };
 
 export function matchesDecade(year: number, decade: DecadeFilter): boolean {
@@ -108,11 +116,16 @@ export function filterMovies(
   filters: FilterState,
   entries: Record<string, UserMovieEntry>,
   mode: 'discover' | 'watchlist' | 'seen',
+  avoidPreferences?: AvoidPreferences,
+  universe: AppUniverse = 'nocturna',
 ): Movie[] {
   const result = catalog.filter((movie) => {
     const entry = entries[movie.id];
     if (mode === 'discover') {
       if (entry && (entry.status === 'seen' || entry.status === 'watchlist' || entry.status === 'skipped')) {
+        return false;
+      }
+      if (avoidPreferences && isMovieBlockedByPreferences(movie, avoidPreferences, universe)) {
         return false;
       }
     } else if (mode === 'watchlist') {
@@ -656,11 +669,14 @@ export function parseStoredLibrary(raw: string | null): UserLibraryState {
           .slice(0, 5000)
       : [];
 
+    const avoidPreferences = sanitizeAvoidPreferences(parsed.avoidPreferences);
+
     return {
       entries,
       history: [],
       discoveredMovies,
       customSeenTitles,
+      avoidPreferences,
     };
   } catch {
     return INITIAL_LIBRARY_STATE;

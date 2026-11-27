@@ -7,6 +7,7 @@ import {
   type PanInfo,
 } from 'motion/react';
 import {
+  Ban,
   BookmarkPlus,
   Compass,
   Flame,
@@ -55,6 +56,8 @@ interface DiscoveryDeckProps {
   onCopyMatineLink: () => void;
   onJumpToMovie: (movieId: string) => void;
   onInspectMovie: (movie: Movie) => void;
+  activeAvoidCount: number;
+  onOpenAvoidPreferences: () => void;
 }
 
 type ExitDirection = 'left' | 'right' | 'up' | 'down' | null;
@@ -403,6 +406,8 @@ export function DiscoveryDeck({
   onCopyMatineLink,
   onJumpToMovie,
   onInspectMovie,
+  activeAvoidCount,
+  onOpenAvoidPreferences,
 }: DiscoveryDeckProps) {
   const currentMovie = movies[0] ?? null;
   const nextMovie = movies[1] ?? null;
@@ -766,6 +771,18 @@ export function DiscoveryDeck({
                   <span className="hidden lg:inline">
                     {isFindingSimilar ? 'Buscando filmes parecidos...' : 'Mais parecidos com este'}
                   </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={onOpenAvoidPreferences}
+                  className={`inline-flex min-h-[34px] items-center gap-1.5 font-medium transition-colors whitespace-nowrap ${
+                    activeAvoidCount > 0
+                      ? 'text-[#A62E4F] hover:text-[#8E2341] dark:text-rose-400 dark:hover:text-rose-300'
+                      : 'text-[#6E5660] hover:text-[#2D1E25] dark:text-zinc-400 dark:hover:text-zinc-100'
+                  }`}
+                >
+                  <Ban className="h-3.5 w-3.5" aria-hidden="true" />
+                  <span>{activeAvoidCount > 0 ? `Evitar (${activeAvoidCount})` : 'Evitar estilos'}</span>
                 </button>
               </div>
 
